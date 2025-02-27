@@ -59,8 +59,12 @@ def load_seen_announcements():
         return set()
 
 def save_seen_announcements(seen):
-    with open("announcements_seen.json", "w", encoding="utf-8") as f:
-        json.dump(list(seen), f, ensure_ascii=False, indent=4)
+    try:
+        with open("announcements_seen.json", "w", encoding="utf-8") as f:
+            json.dump(list(seen), f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logging.error(f"Failed to save announcements_seen.json: {e}")
+
 
 # 공지사항 크롤링
 def get_school_notices(category=""):
@@ -128,8 +132,9 @@ async def check_for_new_notices():
             await send_notification(notice)
         seen_announcements.update(new_notices)
         save_seen_announcements(seen_announcements)
-    logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
-            return new_notices
+        logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
+        return new_notices  # ✅ 올바른 위치로 이동
+
     else:
         logging.info("✅ 새로운 공지 없음")
         return []
