@@ -26,11 +26,6 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()  # aiogram v3에서는 인자 없이 생성
 
 def load_seen_announcements():
-    """
-    상태 파일(announcements_seen.json)에서 이전에 받은 공지사항 목록을 읽어옵니다.
-    파일이 없거나 내용이 비어있으면 빈 리스트를 반환합니다.
-    각 공지사항은 (title, href, department, date) 튜플로 저장됩니다.
-    """
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
             try:
@@ -44,17 +39,10 @@ def load_seen_announcements():
         return []
 
 def save_seen_announcements(seen):
-    """
-    전달받은 공지사항 리스트를 상태 파일(announcements_seen.json)에 저장합니다.
-    """
     with open("announcements_seen.json", "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False)
 
 def commit_state_changes():
-    """
-    상태 파일의 변경사항을 Git에 커밋하고 푸시합니다.
-    개인 액세스 토큰(MY_PAT)을 사용하여 원격 URL을 재설정합니다.
-    """
     subprocess.run(["git", "config", "--global", "user.email", "you@example.com"], check=True)
     subprocess.run(["git", "config", "--global", "user.name", "Minhoooong"], check=True)
     
@@ -65,17 +53,12 @@ def commit_state_changes():
             f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         ], check=True)
     
-    # 디버그: 원격 URL 출력 (토큰은 마스킹됨)
     subprocess.run(["git", "remote", "-v"], check=True)
-    
     subprocess.run(["git", "add", "announcements_seen.json"], check=True)
     subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=False)
     subprocess.run(["git", "push"], check=True)
 
 def parse_date(date_str):
-    """
-    "YYYY-MM-DD" 형식의 문자열을 datetime 객체로 변환합니다.
-    """
     try:
         return datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError as ve:
@@ -83,10 +66,6 @@ def parse_date(date_str):
         return None
 
 def get_school_notices():
-    """
-    학교 공지사항 페이지에서 각 공지사항의 제목, 링크, 작성자(부서), 날짜를 크롤링합니다.
-    각 공지사항은 (title, href, department, date) 튜플로 저장됩니다.
-    """
     try:
         response = requests.get(URL)
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -151,7 +130,8 @@ async def filter_announcements(message: types.Message):
     /filter 명령어를 처리하여 사용자가 입력한 날짜(YYYY-MM-DD)에 해당하는 공지사항을 필터링하여 전송합니다.
     """
     try:
-        args = message.get_args().strip()
+        parts = message.text.split(maxsplit=1)
+        args = parts[1].strip() if len(parts) > 1 else ""
         logging.info(f"/filter command received with args: {args}")
         if not args:
             await message.reply("날짜 형식(YYYY-MM-DD)을 입력해 주세요. 예: /filter 2025-02-27")
@@ -198,9 +178,15 @@ async def scheduled_updates():
     commit_state_changes()
 
 async def main():
-    # 스케줄링 작업을 별도 태스크로 실행하고, 봇의 명령어 처리를 위해 폴링 시작
-    asyncio.create_task(scheduled_updates())
-    await dp.start_polling(bot)
+    # 스케줄링 작업을 별도 태스크로 실행
+    scheduled_task = asyncio.create_task(scheduled_updates())
+    try:
+        # 폴링을 10분 동안 실행 후 자동 종료하도록 타임아웃 설정 (예: 600초)
+        await asyncio.wait_for(dp.start_polling(bot), timeout=600)
+    except asyncio.TimeoutError:
+        logging.info("Polling timed out after 10 minutes. Terminating this run.")
+    finally:
+        scheduled_task.cancel()
 
 if __name__ == '__main__':
     asyncio.run(main())
