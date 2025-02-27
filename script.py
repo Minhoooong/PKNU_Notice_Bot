@@ -10,8 +10,8 @@ import subprocess
 # 상수 정의
 URL = 'https://www.pknu.ac.kr/main/163'
 BASE_URL = 'https://www.pknu.ac.kr'
-TOKEN = os.environ.get('TELEGRAM_TOKEN')
-CHAT_ID = os.environ.get('CHAT_ID')
+TOKEN = os.environ.get('7651013512:AAEp1JqGe5d1V6HZ6KyMceZLVX_ugAIEKP8')
+CHAT_ID = os.environ.get('6052307299')
 
 # 봇 초기화
 bot = Bot(token=TOKEN)
@@ -28,11 +28,9 @@ def load_seen_announcements():
                 data = json.load(f)
                 return set(tuple(item) for item in data)
             except json.JSONDecodeError:
-                # 파일 내용이 비어있거나 JSON 형식이 잘못된 경우 빈 집합 반환
                 return set()
     except FileNotFoundError:
         return set()
-
 
 def save_seen_announcements(seen):
     """
@@ -44,10 +42,20 @@ def save_seen_announcements(seen):
 def commit_state_changes():
     """
     상태 파일의 변경사항을 Git에 커밋하고 푸시합니다.
-    GitHub Actions 환경에서는 GITHUB_TOKEN을 사용하거나, 별도 설정한 커밋 정보를 활용합니다.
+    GITHUB_TOKEN을 사용하여 원격 URL을 재설정합니다.
     """
+    # Git 설정 (이메일과 사용자 이름은 필요에 따라 수정)
     subprocess.run(["git", "config", "--global", "user.email", "you@example.com"], check=True)
     subprocess.run(["git", "config", "--global", "user.name", "YourGitHubUsername"], check=True)
+    
+    # GITHUB_TOKEN 사용하여 원격 URL 재설정
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        subprocess.run([
+            "git", "remote", "set-url", "origin",
+            f"https://x-access-token:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
+        ], check=True)
+    
     subprocess.run(["git", "add", "announcements_seen.json"], check=True)
     subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=False)
     subprocess.run(["git", "push"], check=True)
@@ -93,7 +101,7 @@ async def main():
     else:
         logging.info("새로운 공지사항이 없습니다.")
 
-    # 상태 업데이트 후 저장
+    # 상태 업데이트 후 저장 및 커밋/푸시
     updated_state = previous_notices.union(current_notices)
     save_seen_announcements(updated_state)
     commit_state_changes()
