@@ -120,6 +120,19 @@ async def send_notification(notice):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
+@dp.message(Command("clear"))
+async def clear_chat(message: types.Message):
+    await message.answer("채팅 내역이 초기화되었습니다.", reply_markup=ReplyKeyboardRemove())
+    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+
+@dp.message(Command("clearall"))
+async def clear_all_data(message: types.Message):
+    if os.path.exists("announcements_seen.json"):
+        os.remove("announcements_seen.json")
+        logging.info("announcements_seen.json has been deleted.")
+    await message.answer("채팅 내역 및 저장된 공지사항이 초기화되었습니다.", reply_markup=ReplyKeyboardRemove())
+    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+
 # /start 명령어 처리
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
