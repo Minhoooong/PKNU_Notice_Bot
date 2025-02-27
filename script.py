@@ -5,9 +5,9 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
-from aiogram.filters import Command, Text
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.context import FSMContext
+from aiogram.dispatcher.filters import Command, Text
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from aiogram.dispatcher import FSMContext
 import json
 import os
 import subprocess
@@ -25,7 +25,7 @@ CHAT_ID = os.environ.get('CHAT_ID')
 
 # 봇 및 Dispatcher 초기화 (HTML 포맷 메시지 사용)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher()  # aiogram v3에서는 인자 없이 생성
+dp = Dispatcher()  # aiogram v2에서는 Dispatcher(bot) 대신 이렇게 사용
 
 # FSM 상태 정의: 날짜 입력 대기
 class FilterState(StatesGroup):
