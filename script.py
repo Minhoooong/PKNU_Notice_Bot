@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
-from aiogram.filters import Command, Text
+from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
@@ -137,14 +137,9 @@ async def callback_all_notices(callback: types.CallbackQuery):
             await send_notification(notice)
     await callback.answer("전체 공지사항을 전송했습니다.")
 
-# FSM 메시지 핸들러: MM/DD 형식 날짜 입력 처리
-@dp.message(Text())
+# FSM 메시지 핸들러: MM/DD 형식 날짜 입력 처리 (Text 필터 대신 lambda 사용)
+@dp.message(lambda message: True, state=FilterState.waiting_for_date)
 async def process_date_input(message: types.Message, state: FSMContext):
-    # FSM 상태가 waiting_for_date인지 확인
-    current_state = await state.get_state()
-    if current_state != FilterState.waiting_for_date.state:
-        return  # 해당 상태가 아니라면 무시합니다.
-        
     input_text = message.text.strip()
     logging.info(f"Received date input: {input_text}")
     try:
