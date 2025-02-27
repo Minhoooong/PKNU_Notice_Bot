@@ -32,7 +32,7 @@ CATEGORY_CODES = {
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 
-# 봇 및 Dispatcher 초기화
+# 봇 및 Dispatcher 초기화 (HTML 포맷 메시지 사용)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
@@ -41,87 +41,31 @@ class FilterState(StatesGroup):
     waiting_for_date = State()
     selecting_category = State()
 
-# JSON 파일에서 기존 공지사항(링크) 로드
+# 날짜 파싱 함수
+def parse_date(date_str):
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError as ve:
+        logging.error(f"Date parsing error for {date_str}: {ve}")
+        return None
+
+# JSON 파일에서 기존 공지사항 로드
 def load_seen_announcements():
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
             seen_data = json.load(f)
-            return {item for item in seen_data if isinstance(item, str)}  # ✅ 문자열(링크)만 저장
+            return [(title, url) for title, url in seen_data]  # ✅ 순서를 유지하는 리스트 반환
     except (FileNotFoundError, json.JSONDecodeError):
-        logging.warning("⚠️ announcements_seen.json not found or corrupted. Initializing new set.")
-        return set()
-
-# JSON 파일에 새로운 공지사항(링크) 저장
-def save_seen_announcements(seen):
-    try:
-        with open("announcements_seen.json", "w", encoding="utf-8") as f:
-            json.dump(sorted(seen), f, ensure_ascii=False, indent=4)  # ✅ set을 list로 변환하여 저장
-
-        # GitHub에 푸시
-        push_changes()
-    except Exception as e:
-        logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
-
-# GitHub에 변경 사항 푸시
-def push_changes():
-    try:
-        subprocess.run(["git", "config", "--global", "user.email", "github-actions@github.com"], check=True)
-        subprocess.run(["git", "config", "--global", "user.name", "github-actions"], check=True)
-        subprocess.run(["git", "add", "announcements_seen.json"], check=True)
-        subprocess.run(["git", "commit", "-m", "Update announcements_seen.json"], check=True)
-        subprocess.run(["git", "push", "https://x-access-token:{}@github.com/Minhoooong/PKNU_Notice_Bot.git".format(os.environ["MY_PAT"])], check=True)
-        logging.info("✅ Successfully pushed changes to GitHub.")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
-
-# 공지사항 크롤링 (부서 정보 제거)
-def get_school_notices(category=""):
-    try:
-        category_url = f"{URL}?cd={category}" if category else URL
-        response = requests.get(category_url, timeout=10)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        notices = []
-        for tr in soup.find_all("tr"):
-            title_td = tr.find("td", class_="bdlTitle")
-            date_td = tr.find("td", class_="bdlDate")
-            if title_td and title_td.find("a") and date_td:
-                a_tag = title_td.find("a")
-                title = a_tag.get_text(strip=True)
-                href = a_tag.get("href")
-                if href and href.startswith("?"):
-                    href = BASE_URL + href
-                elif href and not href.startswith("http"):
-                    href = BASE_URL + "/" + href
-                date = date_td.get_text(strip=True)
-                notices.append((title, href, date))  # ✅ department 제거
-        
-        # 날짜 기준 최신순 정렬
-        notices.sort(key=lambda x: parse_date(x[2]) or datetime.min, reverse=True)
-        return notices
-    except requests.RequestException as e:
-        logging.error(f"Error fetching notices: {e}")
-        return []
-    except Exception as e:
-        logging.exception("Error in get_school_notices")
         return []
 
-# JSON 파일에서 기존 공지사항(링크) 로드
-def load_seen_announcements():
-    try:
-        with open("announcements_seen.json", "r", encoding="utf-8") as f:
-            seen_data = json.load(f)
-            return {(title, url) for title, url in seen_data}  # ✅ 2개 요소 (title, url)만 저장
-    except (FileNotFoundError, json.JSONDecodeError):
-        logging.warning("⚠️ announcements_seen.json not found or corrupted. Initializing new set.")
-        return set()
-
-# JSON 파일에 새로운 공지사항(링크) 저장
+# JSON 파일에 새로운 공지사항 저장 (순서 유지)
 def save_seen_announcements(seen):
     try:
+        seen_list = sorted(seen, key=lambda x: x[1])  # ✅ URL 기준 정렬 (또는 최신순 정렬 가능)
         with open("announcements_seen.json", "w", encoding="utf-8") as f:
-            json.dump(sorted(seen), f, ensure_ascii=False, indent=4)  # ✅ set을 list로 변환하여 저장
+            json.dump(seen_list, f, ensure_ascii=False, indent=4)
+
+        # Git 커밋 및 푸시
         push_changes()
     except Exception as e:
         logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
@@ -144,7 +88,7 @@ async def check_for_new_notices():
     seen_titles_urls = {(title, normalize_url(url)) for title, url in seen_announcements}
 
     new_notices = [
-        (title, href, date) for title, href, date in current_notices
+        (title, href, date) for title, href, _, date in current_notices
         if (title, normalize_url(href)) not in seen_titles_urls
     ]
     logging.info(f"DEBUG: New notices detected: {new_notices}")
@@ -152,17 +96,43 @@ async def check_for_new_notices():
     if new_notices:
         for notice in new_notices:
             await send_notification(notice)
-        seen_announcements.update((title, href) for title, href, _ in new_notices)  # ✅ 2개 요소만 저장
+        seen_announcements.extend([(title, href) for title, href, _ in new_notices])  # ✅ 리스트에 추가 (순서 유지)
         save_seen_announcements(seen_announcements)
         logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
 
-# 알림 전송 (부서 정보 제거)
+    else:
+        logging.info("✅ 새로운 공지 없음")
+        return []
+        
+# GitHub에 announcements_seen.json 푸시
+def push_changes():
+    try:
+        subprocess.run(["git", "add", "announcements_seen.json"], check=True)
+        subprocess.run(["git", "commit", "-m", "Update announcements_seen.json"], check=True)
+        subprocess.run([
+            "git", "push", "https://x-access-token:{}@github.com/Minhoooong/PKNU_Notice_Bot.git".format(os.environ["MY_PAT"])
+        ], check=True)
+        logging.info("✅ Successfully pushed changes to GitHub.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
+
+# 수동으로 새로운 공지사항 확인
+@dp.message(Command("checknotices"))
+async def manual_check_notices(message: types.Message):
+    new_notices = await check_for_new_notices()
+    if new_notices:
+        await message.answer(f"📢 {len(new_notices)}개의 새로운 공지사항이 있습니다!")
+    else:
+        await message.answer("✅ 새로운 공지사항이 없습니다.")
+        
+# 알림 전송
 async def send_notification(notice):
-    title, href, date = notice  # ✅ department 제거
-    message_text = f"📢 <b>{html.escape(title)}</b>\n📅 {html.escape(date)}"
+    title, href, department, date = notice
+    message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
+    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
-    
+
 # 메시지 ID 저장을 위한 전역 변수
 
 # /start 명령어 처리
