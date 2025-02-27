@@ -13,11 +13,16 @@ BASE_URL = 'https://www.pknu.ac.kr'
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 
-# 봇 초기화
-bot = Bot(token=TOKEN)
+# 봇 초기화 (HTML 포맷 사용)
+bot = Bot(token=TOKEN, parse_mode="HTML")
 logging.basicConfig(level=logging.INFO)
 
 def load_seen_announcements():
+    """
+    상태 파일(announcements_seen.json)에서 이전에 받은 공지사항 목록을 읽어옵니다.
+    파일이 없거나 내용이 비어있으면 빈 집합을 반환합니다.
+    각 공지사항은 (title, href, department, date) 튜플로 저장됩니다.
+    """
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
             try:
@@ -29,10 +34,17 @@ def load_seen_announcements():
         return set()
 
 def save_seen_announcements(seen):
+    """
+    전달받은 공지사항 집합을 상태 파일(announcements_seen.json)에 저장합니다.
+    """
     with open("announcements_seen.json", "w", encoding="utf-8") as f:
         json.dump(list(seen), f, ensure_ascii=False)
 
 def commit_state_changes():
+    """
+    상태 파일의 변경사항을 Git에 커밋하고 푸시합니다.
+    개인 액세스 토큰(MY_PAT)을 사용하여 원격 URL을 재설정합니다.
+    """
     subprocess.run(["git", "config", "--global", "user.email", "you@example.com"], check=True)
     subprocess.run(["git", "config", "--global", "user.name", "Minhoooong"], check=True)
     
@@ -43,34 +55,61 @@ def commit_state_changes():
             f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         ], check=True)
     
+    # 원격 URL 출력 (디버그용; 토큰은 마스킹됩니다)
     subprocess.run(["git", "remote", "-v"], check=True)
+    
     subprocess.run(["git", "add", "announcements_seen.json"], check=True)
     subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=False)
     subprocess.run(["git", "push"], check=True)
 
 def get_school_notices():
+    """
+    학교 공지사항 페이지에서 각 공지사항의 제목, 링크, 작성자(부서), 날짜를 크롤링합니다.
+    HTML 예시:
+      <tr>
+         <td class="bdlTitle">
+            <a href="?action=view&amp;no=719050">2025 우아한 사장님 자녀 장학금 지원 안내</a>
+         </td>
+         <td class="bdlUser">학생복지과</td>
+         <td class="bdlDate">2025-02-27</td>
+      </tr>
+    각 공지사항은 (title, href, department, date) 튜플로 저장됩니다.
+    """
     response = requests.get(URL)
     soup = BeautifulSoup(response.text, 'html.parser')
     notices = set()
     
     for tr in soup.find_all("tr"):
         title_td = tr.find("td", class_="bdlTitle")
-        if title_td:
+        user_td = tr.find("td", class_="bdlUser")
+        date_td = tr.find("td", class_="bdlDate")
+        if title_td and title_td.find("a") and user_td and date_td:
             a_tag = title_td.find("a")
-            if a_tag:
-                title = a_tag.get_text(strip=True)
-                href = a_tag.get("href")
-                if href.startswith("?"):
-                    href = BASE_URL + "/" + href
-                notices.add((title, href))
+            title = a_tag.get_text(strip=True)
+            href = a_tag.get("href")
+            if href.startswith("?"):
+                href = BASE_URL + "/" + href
+            department = user_td.get_text(strip=True)
+            date = date_td.get_text(strip=True)
+            notices.add((title, href, department, date))
     return notices
 
 async def send_notification(notices):
     """
     각 공지사항을 개별 텔레그램 메시지로 전송합니다.
+    메시지 형식:
+    
+    [부경대 {department} 공지사항 업데이트]
+    
+    <b>{title}</b>
+    
+    {date}
+    <a href="{href}">자세히 보기</a>
     """
-    for idx, (title, href) in enumerate(notices, 1):
-        message_text = f"{idx}. {title}\n{href}"
+    for idx, notice in enumerate(notices, 1):
+        title, href, department, date = notice
+        header = f"[부경대 {department} 공지사항 업데이트]"
+        message_text = f"{header}\n\n<b>{title}</b>\n\n{date}\n<a href=\"{href}\">자세히 보기</a>"
         await bot.send_message(chat_id=CHAT_ID, text=message_text)
         # 원한다면 각 메시지 사이에 딜레이를 줄 수 있습니다.
         # await asyncio.sleep(1)
