@@ -128,6 +128,17 @@ def get_school_notices(category=""):
 # 새로운 공지사항 확인 및 알림 전송
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
+    seen_announcements = load_seen_announcements()
+    logging.info(f"Loaded seen announcements: {seen_announcements}")
+    
+    current_notices = get_school_notices()
+    logging.info(f"Fetched current notices: {current_notices}")
+    
+    new_notices = [notice for notice in current_notices if notice not in seen_announcements]
+    logging.info(f"New notices found: {new_notices}")
+    
+    return new_notices
+    logging.info("Checking for new notices...")
         seen_announcements = load_seen_announcements()
     logging.info(f"Loaded seen announcements: {seen_announcements}")
         current_notices = get_school_notices()
