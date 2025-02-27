@@ -75,12 +75,9 @@ def parse_date(date_str):
 # 공지사항 크롤링
 def get_school_notices():
     try:
-        try:
         response = requests.get(URL, timeout=10)
         response.raise_for_status()  # HTTP 오류 발생 시 예외 발생
-    except requests.RequestException as e:
-        logging.error(f"Error fetching notices: {e}")
-        return []
+        
         soup = BeautifulSoup(response.text, 'html.parser')
         notices = []
         for tr in soup.find_all("tr"):
@@ -99,6 +96,9 @@ def get_school_notices():
                 date = date_td.get_text(strip=True)
                 notices.append((title, href, department, date))
         return notices
+    except requests.RequestException as e:
+        logging.error(f"Error fetching notices: {e}")
+        return []
     except Exception as e:
         logging.exception("Error in get_school_notices")
         return []
@@ -119,37 +119,9 @@ async def start_command(message: types.Message):
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
-@dp.callback_query(F.data == "filter_date")
-async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
-    await state.set_state(str(FilterState.waiting_for_date))
-    await callback.answer()
-
-@dp.message(F.text)
-async def process_date_input(message: types.Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state != str(FilterState.waiting_for_date):
-        return
-    
-    input_text = message.text.strip()
-    current_year = datetime.now().year
-    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
-    filter_date = parse_date(full_date_str)
-    
-    notices = [n for n in get_school_notices() if parse_date(n[3]) == filter_date]
-    if not notices:
-        await message.answer(f"{input_text} 날짜의 공지사항이 없습니다.")
-    else:
-        for notice in notices:
-            await send_notification(notice)
-        await message.answer(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
-    
-    await state.clear()
-
 async def main():
-    # 핸들러가 정상적으로 등록되었는지 확인
-logging.info("Starting bot polling...")
-await dp.start_polling(bot)
+    logging.info("Starting bot polling...")
+    await dp.start_polling(bot)
 
 if __name__ == '__main__':
     asyncio.run(main())
