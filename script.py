@@ -129,7 +129,7 @@ async def check_for_new_notices():
         seen_announcements.update(new_notices)
         save_seen_announcements(seen_announcements)
     logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
-        return new_notices
+            return new_notices
     else:
         logging.info("✅ 새로운 공지 없음")
         return []
