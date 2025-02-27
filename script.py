@@ -201,9 +201,10 @@ async def process_date_input(message: types.Message, state: FSMContext):
     await state.clear()
 
 # 메시지 ID 저장을 위한 전역 변수
+# 메시지 ID 저장을 위한 전역 변수
 message_ids = {}
 
-@dp.message(F.text)
+@dp.message(F.text & ~F.text.startswith("/"))  # 명령어 제외한 모든 텍스트 메시지 추적
 async def track_messages(message: types.Message):
     """사용자의 메시지를 추적하여 삭제 가능하도록 저장"""
     chat_id = message.chat.id
@@ -234,6 +235,46 @@ async def clear_chat(message: types.Message):
     else:
         no_msg = await message.answer("❌ 삭제할 채팅 내역이 없습니다.")
         message_ids[chat_id].append(no_msg.message_id)  # 봇이 보낸 메시지도 삭제 대상에 추가
+
+@dp.message(F.text)
+async def process_date_input(message: types.Message, state: FSMContext):
+    """날짜 입력을 처리하는 함수, 상태가 None이어도 명령어 허용"""
+    current_state = await state.get_state()
+    logging.info(f"Current FSM state raw: {current_state}")
+
+    # FSM 상태가 None이어도 /clear 같은 명령어는 실행 허용
+    if current_state is None and message.text.startswith("/"):
+        return
+
+    if current_state != str(FilterState.waiting_for_date):
+        logging.warning("Received date input, but state is incorrect.")
+        return
+
+    input_text = message.text.strip()
+    logging.info(f"Received date input: {input_text}")
+
+    current_year = datetime.now().year
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+    logging.info(f"Converted full date string: {full_date_str}")
+
+    filter_date = parse_date(full_date_str)
+
+    if filter_date is None:
+        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 입력해 주세요.")
+        return
+
+    notices = [n for n in get_school_notices() if parse_date(n[3]) == filter_date]
+
+    if not notices:
+        logging.info(f"No notices found for {full_date_str}")
+        await message.answer(f"{input_text} 날짜의 공지사항이 없습니다.")
+    else:
+        for notice in notices:
+            await send_notification(notice)
+        await message.answer(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
+
+    logging.info("Clearing FSM state.")
+    await state.clear()
 
 async def main():
     logging.info("Starting bot polling...")
