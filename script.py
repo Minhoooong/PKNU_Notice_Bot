@@ -224,36 +224,40 @@ async def clear_chat(message: types.Message):
                 logging.warning(f"메시지 삭제 실패: {e}")
 
         # 삭제된 메시지 제거
-        message_ids[chat_id] = message_ids[chat_id][:-deleted_count]
+# 메시지 ID 저장을 위한 전역 변수
+message_ids = {}
 
-        await message.answer(f"채팅 내역이 초기화되었습니다. ({deleted_count}개 삭제됨)", reply_markup=ReplyKeyboardRemove())
-    else:
-        await message.answer("삭제할 채팅 내역이 없습니다.")
-
-@dp.message(Command("clearall"))
-async def clear_all_data(message: types.Message):
-    """채팅 내역과 저장된 공지사항 기록을 모두 삭제"""
+@dp.message()
+async def track_messages(message: types.Message):
+    """사용자의 메시지를 추적하여 ID 저장"""
     chat_id = message.chat.id
-    deleted_count = 0
+    if chat_id not in message_ids:
+        message_ids[chat_id] = []
+    message_ids[chat_id].append(message.message_id)
+    logging.info(f"저장된 메시지 ID: {message.message_id}")
 
+@dp.message(Command("clear"))
+async def clear_chat(message: types.Message):
+    """최근 저장된 메시지를 삭제"""
+    chat_id = message.chat.id
     if chat_id in message_ids and message_ids[chat_id]:
-        for msg_id in message_ids[chat_id][-100:]:  # 최근 100개까지 삭제 가능
+        deleted_count = 0
+        for msg_id in message_ids[chat_id][-50:]:  # 최근 50개 삭제
             try:
                 await bot.delete_message(chat_id, msg_id)
                 deleted_count += 1
             except Exception as e:
-                logging.warning(f"메시지 삭제 실패: {e}")
+                logging.warning(f"메시지 삭제 실패 (ID: {msg_id}): {e}")
 
-        # 삭제된 메시지 제거
+        # 삭제된 메시지 목록 정리
         message_ids[chat_id] = message_ids[chat_id][:-deleted_count]
 
-    # announcements_seen.json 삭제
-    if os.path.exists("announcements_seen.json"):
-        os.remove("announcements_seen.json")
-        logging.info("announcements_seen.json has been deleted.")
+        confirm_msg = await message.answer(f"✅ 채팅 내역이 초기화되었습니다. ({deleted_count}개 삭제됨)")
+        message_ids[chat_id].append(confirm_msg.message_id)  # 봇이 보낸 메시지도 삭제 대상에 추가
 
-    await message.answer(f"채팅 내역 및 저장된 공지사항이 초기화되었습니다. ({deleted_count}개 삭제됨)", reply_markup=ReplyKeyboardRemove())
-
+    else:
+        no_msg = await message.answer("❌ 삭제할 채팅 내역이 없습니다.")
+        message_ids[chat_id].append(no_msg.message_id)  # 봇이 보낸 메시지도 삭제 대상에 추가
 
 async def main():
     logging.info("Starting bot polling...")
