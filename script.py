@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
-from aiogram.filters import Command
+from aiogram.filters import Command, Text
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
@@ -25,45 +25,46 @@ CHAT_ID = os.environ.get('CHAT_ID')
 
 # 봇 및 Dispatcher 초기화 (HTML 포맷 메시지 사용)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher()  # aiogram v3에서는 인자 없이 생성
+dp = Dispatcher()
 
-# FSM 상태 정의: 날짜 입력 대기
+# FSM 상태 정의
 class FilterState(StatesGroup):
     waiting_for_date = State()
 
+# 공지사항 확인 JSON 로드
 def load_seen_announcements():
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
-            try:
-                data = json.load(f)
-                return [tuple(item) for item in data]
-            except json.JSONDecodeError:
-                logging.error("JSONDecodeError in announcements_seen.json")
-                return []
-    except FileNotFoundError:
-        logging.info("announcements_seen.json not found, returning empty list")
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        logging.warning("No previous announcements found or JSON error.")
         return []
 
+# 공지사항 저장
 def save_seen_announcements(seen):
     with open("announcements_seen.json", "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False)
 
+# Git 변경사항 커밋
 def commit_state_changes():
-    subprocess.run(["git", "config", "--global", "user.email", "you@example.com"], check=True)
-    subprocess.run(["git", "config", "--global", "user.name", "Minhoooong"], check=True)
-    
-    token = os.environ.get("MY_PAT")
-    if token:
-        subprocess.run([
-            "git", "remote", "set-url", "origin",
-            f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
-        ], check=True)
-    
-    subprocess.run(["git", "remote", "-v"], check=True)
-    subprocess.run(["git", "add", "announcements_seen.json"], check=True)
-    subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=False)
-    subprocess.run(["git", "push"], check=True)
+    try:
+        subprocess.run(["git", "config", "--global", "user.email", "you@example.com"], check=True)
+        subprocess.run(["git", "config", "--global", "user.name", "Minhoooong"], check=True)
+        
+        token = os.environ.get("MY_PAT")
+        if token:
+            subprocess.run([
+                "git", "remote", "set-url", "origin",
+                f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
+            ], check=True)
+        
+        subprocess.run(["git", "add", "announcements_seen.json"], check=True)
+        subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=True)
+        subprocess.run(["git", "push"], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Git operation failed: {e}")
 
+# 날짜 파싱 함수
 def parse_date(date_str):
     try:
         return datetime.strptime(date_str, "%Y-%m-%d")
@@ -71,9 +72,10 @@ def parse_date(date_str):
         logging.error(f"Date parsing error for {date_str}: {ve}")
         return None
 
+# 공지사항 크롤링
 def get_school_notices():
     try:
-        response = requests.get(URL)
+        response = requests.get(URL, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         notices = []
         for tr in soup.find_all("tr"):
@@ -84,7 +86,9 @@ def get_school_notices():
                 a_tag = title_td.find("a")
                 title = a_tag.get_text(strip=True)
                 href = a_tag.get("href")
-                if href.startswith("?"):
+                if href and href.startswith("?"):
+                    href = BASE_URL + href
+                elif href and not href.startswith("http"):
                     href = BASE_URL + "/" + href
                 department = user_td.get_text(strip=True)
                 date = date_td.get_text(strip=True)
@@ -94,102 +98,67 @@ def get_school_notices():
         logging.exception("Error in get_school_notices")
         return []
 
+# 알림 전송
 async def send_notification(notice):
     title, href, department, date = notice
-    escaped_title = html.escape(title)
-    escaped_department = html.escape(department)
-    escaped_date = html.escape(date)
-    header = f"[부경대 <b>{escaped_department}</b> 공지사항 업데이트]"
-    message_text = f"{header}\n\n<b>{escaped_title}</b>\n\n{escaped_date}"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="자세히 보기", url=href)]
-    ])
+    message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
+    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-# /start 명령어 핸들러: 버튼 2개 ("날짜 입력", "전체 공지사항")
-@dp.message(Command(commands=["start"]))
+# /start 명령어
+@dp.message(Command("start"))
 async def start_command(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="날짜 입력", callback_data="filter_date")],
         [InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
     ])
-    reply_text = "안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:"
-    await message.reply(reply_text, reply_markup=keyboard)
+    await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
-# Callback Query 핸들러: "날짜 입력" 버튼
-@dp.callback_query(lambda c: c.data == "filter_date")
+# Callback Query 핸들러
+@dp.callback_query(Text("filter_date"))
 async def callback_filter_date(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
-    await state.set_state(FilterState.waiting_for_date)
+    await state.set_state(FilterState.waiting_for_date.state)
     await callback.answer()
 
-# Callback Query 핸들러: "전체 공지사항" 버튼
-@dp.callback_query(lambda c: c.data == "all_notices")
+@dp.callback_query(Text("all_notices"))
 async def callback_all_notices(callback: types.CallbackQuery):
-    await callback.message.edit_reply_markup(reply_markup=None)
     notices = get_school_notices()
     if not notices:
         await callback.message.answer("전체 공지사항이 없습니다.")
     else:
-        sorted_notices = sorted(notices, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
-        for notice in sorted_notices:
+        for notice in notices:
             await send_notification(notice)
-    await callback.answer("전체 공지사항을 전송했습니다.")
+    await callback.answer()
 
-# FSM 메시지 핸들러: MM/DD 형식 날짜 입력 처리 (Text 필터 대신 lambda 사용)
-@dp.message(lambda message: True, state=FilterState.waiting_for_date)
+# 날짜 입력 처리
+@dp.message(Text())
 async def process_date_input(message: types.Message, state: FSMContext):
-    input_text = message.text.strip()
-    logging.info(f"Received date input: {input_text}")
+    current_state = await state.get_state()
+    if current_state != str(FilterState.waiting_for_date):
+        return
+    
     try:
-        current_year = "2025"  # 또는 str(datetime.now().year)
-        full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
-        logging.info(f"Converted full date: {full_date_str}")
+        input_text = message.text.strip()
+        full_date_str = f"2025-{input_text.replace('/', '-')}"
         filter_date = parse_date(full_date_str)
-        if not filter_date:
-            await message.reply("날짜 변환에 실패했습니다. 올바른 MM/DD 형식으로 입력해 주세요.")
-            return
         
-        all_notices = load_seen_announcements() + get_school_notices()
-        filtered = [n for n in set(all_notices) if parse_date(n[3]) == filter_date]
-        if not filtered:
-            await message.reply(f"{input_text} 날짜의 공지사항이 없습니다.")
+        notices = [n for n in get_school_notices() if parse_date(n[3]) == filter_date]
+        if not notices:
+            await message.answer(f"{input_text} 날짜의 공지사항이 없습니다.")
         else:
-            sorted_filtered = sorted(filtered, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
-            for notice in sorted_filtered:
+            for notice in notices:
                 await send_notification(notice)
-            await message.reply(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
-    except Exception as e:
-        logging.exception("Error during date input processing")
-        await message.reply("날짜 처리 중 에러가 발생했습니다.")
+            await message.answer(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
+    except Exception:
+        logging.exception("Error processing date input")
+        await message.answer("날짜 처리 중 오류 발생")
     finally:
         await state.clear()
 
-# 스케줄링 작업: 자동 업데이트 및 새로운 공지 알림
-async def scheduled_updates():
-    previous_notices = load_seen_announcements()
-    current_notices = get_school_notices()
-    new_notices = [n for n in current_notices if n not in previous_notices]
-    if new_notices:
-        sorted_new = sorted(new_notices, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
-        for notice in sorted_new:
-            await send_notification(notice)
-    else:
-        logging.info("No new notices.")
-    updated_state = list(set(previous_notices) | set(current_notices))
-    save_seen_announcements(updated_state)
-    commit_state_changes()
-
 async def main():
-    # 스케줄링 작업을 별도 태스크로 실행하고, 10분 후 폴링 종료 (예시)
-    asyncio.create_task(scheduled_updates())
-    try:
-        await asyncio.wait_for(dp.start_polling(bot), timeout=600)
-    except asyncio.TimeoutError:
-        logging.info("Polling timed out after 10 minutes. Terminating this run.")
-    finally:
-        pass
+    await dp.start_polling(bot)
 
 if __name__ == '__main__':
     asyncio.run(main())
