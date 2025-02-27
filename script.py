@@ -146,6 +146,18 @@ async def check_for_new_notices():
     else:
         logging.info("✅ 새로운 공지 없음")
         return []
+        
+# GitHub에 `announcements_seen.json` 푸시
+def push_changes():
+    try:
+        subprocess.run(["git", "add", "announcements_seen.json"], check=True)
+        subprocess.run(["git", "commit", "-m", "Update announcements_seen.json"], check=True)
+        subprocess.run([
+            "git", "push", "https://x-access-token:{}@github.com/Minhoooong/PKNU_Notice_Bot.git".format(os.environ["MY_PAT"])
+        ], check=True)
+        logging.info("✅ Successfully pushed changes to GitHub.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
 
 # 수동으로 새로운 공지사항 확인
 @dp.message(Command("checknotices"))
