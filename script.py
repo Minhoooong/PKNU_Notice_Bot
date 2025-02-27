@@ -5,7 +5,8 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
-from aiogram.filters import Command, Text
+from aiogram.filters import Command
+from aiogram.filters.text import Text
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
@@ -95,18 +96,6 @@ def get_school_notices():
         return []
 
 async def send_notification(notice):
-    """
-    개별 공지사항을 텔레그램 메시지로 전송합니다.
-    메시지 형식:
-    
-    [부경대 <b>{department}</b> 공지사항 업데이트]
-    
-    <b>{title}</b>
-    
-    {date}
-    
-    (아래 "자세히 보기" 버튼을 누르면 해당 공지로 이동)
-    """
     title, href, department, date = notice
     escaped_title = html.escape(title)
     escaped_department = html.escape(department)
@@ -118,54 +107,49 @@ async def send_notification(notice):
     ])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-# /start 명령어 핸들러: 두 개의 버튼(날짜 입력, 전체 공지사항)을 포함한 인라인 키보드 전송
+# /start 명령어 핸들러: 버튼 2개 표시 ("날짜 입력", "전체 공지사항")
 @dp.message(Command(commands=["start"]))
 async def start_command(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="날짜 입력", callback_data="filter_date")],
         [InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
     ])
-    reply_text = (
-        "안녕하세요! 공지사항 봇입니다.\n\n"
-        "아래 버튼을 선택해 주세요:"
-    )
+    reply_text = "안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:"
     await message.reply(reply_text, reply_markup=keyboard)
 
-# Callback Query 핸들러: "날짜 입력" 버튼 클릭 시
+# Callback Query 핸들러: "날짜 입력" 버튼
 @dp.callback_query(Text(equals="filter_date"))
 async def callback_filter_date(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.edit_reply_markup()  # 키보드 제거
-    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27).")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
     await state.set_state(FilterState.waiting_for_date)
     await callback.answer()
 
-# Callback Query 핸들러: "전체 공지사항" 버튼 클릭 시
+# Callback Query 핸들러: "전체 공지사항" 버튼
 @dp.callback_query(Text(equals="all_notices"))
 async def callback_all_notices(callback: types.CallbackQuery):
-    await callback.message.edit_reply_markup()  # 키보드 제거
+    await callback.message.edit_reply_markup(reply_markup=None)
     notices = get_school_notices()
     if not notices:
         await callback.message.answer("전체 공지사항이 없습니다.")
     else:
-        # 최신순 정렬
         sorted_notices = sorted(notices, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
         for notice in sorted_notices:
             await send_notification(notice)
     await callback.answer("전체 공지사항을 전송했습니다.")
 
-# FSM 메시지 핸들러: MM/DD 날짜 입력 처리
+# FSM 메시지 핸들러: MM/DD 형식 날짜 입력 처리
 @dp.message(Text(), state=FilterState.waiting_for_date)
 async def process_date_input(message: types.Message, state: FSMContext):
     input_text = message.text.strip()
     logging.info(f"Received date input: {input_text}")
     try:
-        # 현재 연도를 붙여 YYYY-MM-DD 형식으로 변환 (예: "02/27" → "2025-02-27"; 필요 시 현재 연도 사용)
-        current_year = "2025"  # 또는 datetime.now().year
+        current_year = "2025"  # 또는 datetime.now().year 사용
         full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
         logging.info(f"Converted full date: {full_date_str}")
         filter_date = parse_date(full_date_str)
         if not filter_date:
-            await message.reply("날짜 변환에 실패했습니다. 올바른 MM/DD 형식으로 입력해 주세요.")
+            await message.reply("날짜 형식 변환에 실패했습니다. 올바른 MM/DD 형식으로 입력해 주세요.")
             return
         
         all_notices = load_seen_announcements() + get_school_notices()
@@ -176,14 +160,14 @@ async def process_date_input(message: types.Message, state: FSMContext):
             sorted_filtered = sorted(filtered, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
             for notice in sorted_filtered:
                 await send_notification(notice)
-            await message.reply(f"{input_text} 날짜의 공지사항을 전송했습니다.")
+            await message.reply(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
     except Exception as e:
         logging.exception("Error during date input processing")
         await message.reply("날짜 처리 중 에러가 발생했습니다.")
     finally:
         await state.clear()
 
-# 스케줄링 작업: 자동 업데이트 및 새로운 공지 알림 (별도 태스크)
+# 스케줄링 작업: 자동 업데이트 및 새로운 공지 알림
 async def scheduled_updates():
     previous_notices = load_seen_announcements()
     current_notices = get_school_notices()
