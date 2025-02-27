@@ -10,8 +10,8 @@ import subprocess
 # 상수 정의
 URL = 'https://www.pknu.ac.kr/main/163'
 BASE_URL = 'https://www.pknu.ac.kr'
-TOKEN = os.environ.get('7651013512:AAEp1JqGe5d1V6HZ6KyMceZLVX_ugAIEKP8')
-CHAT_ID = os.environ.get('6052307299')
+TOKEN = os.environ.get('TELEGRAM_TOKEN')
+CHAT_ID = os.environ.get('CHAT_ID')
 
 # 봇 초기화
 bot = Bot(token=TOKEN)
