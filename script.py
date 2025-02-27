@@ -244,9 +244,16 @@ async def process_date_input(message: types.Message, state: FSMContext):
     logging.info("Clearing FSM state.")
     await state.clear()
 
-async def main():
-    logging.info("Starting bot polling...")
-    await dp.start_polling(bot)
+async def run_bot():
+     try:
+        logging.info("🚀 Starting bot polling for 10 minutes...")
+        await asyncio.gather(
+            dp.start_polling(bot),  # 봇 실행
+            asyncio.sleep(600)  # 10분 후 종료
+        )
+    finally:
+        logging.info("🛑 Stopping bot polling after 10 minutes.")
+        await bot.session.close()  # 봇 세션 닫기
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.run(run_bot())
