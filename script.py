@@ -200,36 +200,12 @@ async def process_date_input(message: types.Message, state: FSMContext):
     logging.info("Clearing FSM state.")
     await state.clear()
 
-message_ids = {}
-
-@dp.message()
-async def track_messages(message: types.Message):
-    """모든 메시지를 기록하여 삭제할 수 있도록 저장"""
-    chat_id = message.chat.id
-    if chat_id not in message_ids:
-        message_ids[chat_id] = []
-    message_ids[chat_id].append(message.message_id)
-
-@dp.message(Command("clear"))
-async def clear_chat(message: types.Message):
-    """최근 기록된 메시지를 삭제"""
-    chat_id = message.chat.id
-    if chat_id in message_ids and message_ids[chat_id]:
-        deleted_count = 0
-        for msg_id in message_ids[chat_id][-100:]:  # 최근 100개까지 삭제 가능
-            try:
-                await bot.delete_message(chat_id, msg_id)
-                deleted_count += 1
-            except Exception as e:
-                logging.warning(f"메시지 삭제 실패: {e}")
-
-        # 삭제된 메시지 제거
 # 메시지 ID 저장을 위한 전역 변수
 message_ids = {}
 
-@dp.message()
+@dp.message(F.text)
 async def track_messages(message: types.Message):
-    """사용자의 메시지를 추적하여 ID 저장"""
+    """사용자의 메시지를 추적하여 삭제 가능하도록 저장"""
     chat_id = message.chat.id
     if chat_id not in message_ids:
         message_ids[chat_id] = []
