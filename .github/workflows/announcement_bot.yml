@@ -13,26 +13,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false  # GitHub 기본 인증 제거
 
-      - name: Pull latest changes
+      - name: Configure Git
         run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
+
+      - name: Authenticate with Personal Access Token (MY_PAT)
+        run: |
+          git remote set-url origin https://Minhoooong:${{ secrets.MY_PAT }}@github.com/${{ github.repository }}.git
+
+      - name: Pull latest changes
+        run: |
           git pull origin main || echo "No changes to pull"
 
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: '3.8'
-
-      - name: Cache announcements_seen.json
-        uses: actions/cache@v3
-        with:
-          path: announcements_seen.json
-          key: announcements-seen-${{ github.run_id }}
-          restore-keys: |
-            announcements-seen-
 
       - name: Install dependencies
         run: |
@@ -50,5 +49,3 @@ jobs:
           git add announcements_seen.json
           git commit -m "Update announcements_seen.json" || echo "No changes to commit"
           git push origin main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
