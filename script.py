@@ -144,10 +144,14 @@ async def scheduled_updates():
         await check_for_new_notices()
         await asyncio.sleep(600)
 
+# 수동으로 새로운 공지사항 확인
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message):
-    await check_for_new_notices()
-    await message.answer("📢 새로운 공지사항을 확인했습니다!")
+    new_notices = await check_for_new_notices()
+    if new_notices:
+        await message.answer("📢 새로운 공지사항을 확인했습니다!")
+    else:
+        await message.answer("✅ 새로운 공지사항이 없습니다.")
         
 # 알림 전송
 async def send_notification(notice):
