@@ -46,7 +46,7 @@ def load_seen_announcements():
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
             seen_data = json.load(f)
-            return set(seen_data)  # ✅ 링크만 set으로 변환
+            return {item for item in seen_data if isinstance(item, str)}  # ✅ 문자열(링크)만 저장
     except (FileNotFoundError, json.JSONDecodeError):
         logging.warning("⚠️ announcements_seen.json not found or corrupted. Initializing new set.")
         return set()
@@ -55,7 +55,7 @@ def load_seen_announcements():
 def save_seen_announcements(seen):
     try:
         with open("announcements_seen.json", "w", encoding="utf-8") as f:
-            json.dump(sorted(list(seen)), f, ensure_ascii=False, indent=4)  # ✅ 순서 정렬하여 저장
+            json.dump(sorted(seen), f, ensure_ascii=False, indent=4)  # ✅ set을 list로 변환하여 저장
 
         # GitHub에 푸시
         push_changes()
