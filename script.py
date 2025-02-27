@@ -5,8 +5,6 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.dispatcher.filters import Command
-from aiogram.dispatcher import FSMContext
 import json
 import os
 import subprocess
@@ -25,21 +23,33 @@ dp = Dispatcher(bot)
 logging.basicConfig(level=logging.INFO)
 
 def load_seen_announcements():
+    """
+    상태 파일(announcements_seen.json)에서 이전에 받은 공지사항 목록을 읽어옵니다.
+    파일이 없거나 내용이 비어있으면 빈 리스트를 반환합니다.
+    각 공지사항은 (title, href, department, date) 튜플로 저장됩니다.
+    """
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
             try:
                 data = json.load(f)
-                return [tuple(item) for item in data]  # 리스트로 반환
+                return [tuple(item) for item in data]
             except json.JSONDecodeError:
                 return []
     except FileNotFoundError:
         return []
 
 def save_seen_announcements(seen):
+    """
+    전달받은 공지사항 리스트를 상태 파일(announcements_seen.json)에 저장합니다.
+    """
     with open("announcements_seen.json", "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False)
 
 def commit_state_changes():
+    """
+    상태 파일의 변경사항을 Git에 커밋하고 푸시합니다.
+    개인 액세스 토큰(MY_PAT)을 사용하여 원격 URL을 재설정합니다.
+    """
     subprocess.run(["git", "config", "--global", "user.email", "you@example.com"], check=True)
     subprocess.run(["git", "config", "--global", "user.name", "Minhoooong"], check=True)
     
@@ -50,18 +60,27 @@ def commit_state_changes():
             f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         ], check=True)
     
+    # 원격 URL 확인 (디버그용)
     subprocess.run(["git", "remote", "-v"], check=True)
+    
     subprocess.run(["git", "add", "announcements_seen.json"], check=True)
     subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=False)
     subprocess.run(["git", "push"], check=True)
 
 def parse_date(date_str):
+    """
+    "YYYY-MM-DD" 형식의 문자열을 datetime 객체로 변환합니다.
+    """
     try:
         return datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
         return None
 
 def get_school_notices():
+    """
+    학교 공지사항 페이지에서 각 공지사항의 제목, 링크, 작성자(부서), 날짜를 크롤링합니다.
+    각 공지사항은 (title, href, department, date) 튜플로 저장됩니다.
+    """
     response = requests.get(URL)
     soup = BeautifulSoup(response.text, 'html.parser')
     notices = []
@@ -84,6 +103,15 @@ def get_school_notices():
 async def send_notification(notice):
     """
     개별 공지사항을 텔레그램 메시지로 전송합니다.
+    메시지 형식:
+    
+    [부경대 <b>{department}</b> 공지사항 업데이트]
+    
+    <b>{title}</b>
+    
+    {date}
+    
+    (아래 "자세히 보기" 버튼을 누르면 해당 공지로 이동)
     """
     title, href, department, date = notice
     escaped_title = html.escape(title)
@@ -96,14 +124,14 @@ async def send_notification(notice):
     ])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-# 스케줄링 작업: 공지사항 업데이트 및 새로운 공지 알림 (기존 자동 전송 로직)
+# 스케줄링 작업: 자동 업데이트 및 새로운 공지 알림
 async def scheduled_updates():
     previous_notices = load_seen_announcements()
     current_notices = get_school_notices()
-    # 새로운 공지사항 추출
+    # 새로운 공지사항 추출 (중복 제거)
     new_notices = [n for n in current_notices if n not in previous_notices]
     if new_notices:
-        # 최신순 정렬 (내림차순)
+        # 날짜 기준 내림차순(최신순) 정렬
         sorted_new = sorted(new_notices, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
         for notice in sorted_new:
             await send_notification(notice)
@@ -118,7 +146,7 @@ async def scheduled_updates():
 async def filter_announcements(message: types.Message):
     try:
         args = message.get_args().strip()
-        # 예시: /filter 2025-02-27
+        logging.info(f"/filter 명령어 수신: {args}")
         if not args:
             await message.reply("날짜 형식(YYYY-MM-DD)을 입력해 주세요. 예: /filter 2025-02-27")
             return
@@ -136,9 +164,8 @@ async def filter_announcements(message: types.Message):
             await message.reply(f"{args} 날짜의 공지사항이 없습니다.")
             return
         
-        # 정렬 (최신순 혹은 오름차순)
+        # 정렬 (최신순)
         sorted_filtered = sorted(filtered, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
-        # 개별 메시지 전송
         for notice in sorted_filtered:
             await send_notification(notice)
         await message.reply(f"{args} 날짜의 공지사항을 전송했습니다.")
@@ -146,9 +173,18 @@ async def filter_announcements(message: types.Message):
         logging.exception("필터링 중 에러 발생")
         await message.reply("공지사항 필터링 중 에러가 발생했습니다.")
 
+# /start 명령어 핸들러
+@dp.message_handler(commands=['start'])
+async def start_command(message: types.Message):
+    reply_text = (
+        "안녕하세요! 공지사항 봇입니다.\n\n"
+        "사용 가능한 명령어:\n"
+        "/filter YYYY-MM-DD  -  지정 날짜의 공지사항 필터링\n"
+    )
+    await message.reply(reply_text)
+
 async def main():
-    # 스케줄링 작업과 명령어 처리를 동시에 돌릴 수 있도록 합니다.
-    # 이 예시는 스케줄링 작업을 먼저 실행한 뒤, 봇 폴링을 시작합니다.
+    # 스케줄링 작업을 별도 태스크로 실행한 후, 봇 명령어 처리를 위해 폴링 시작
     asyncio.create_task(scheduled_updates())
     await dp.start_polling()
 
