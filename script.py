@@ -120,7 +120,7 @@ async def check_for_new_notices():
         notice for notice in current_notices
         if (notice[0], normalize_url(notice[1])) not in seen_titles_urls
     ]
-
+    logging.info(f"DEBUG: New notices detected: {new_notices}")
     logging.info(f"New notices found: {new_notices}")
 
     if new_notices:
@@ -128,6 +128,7 @@ async def check_for_new_notices():
             await send_notification(notice)
         seen_announcements.update(new_notices)
         save_seen_announcements(seen_announcements)
+    logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
         return new_notices
     else:
         logging.info("✅ 새로운 공지 없음")
