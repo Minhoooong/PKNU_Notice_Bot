@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 import json
 import os
 import subprocess
+import html  # HTML 이스케이프 처리를 위해 추가
 
 # 상수 정의
 URL = 'https://www.pknu.ac.kr/main/163'
@@ -45,7 +46,9 @@ def commit_state_changes():
             f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         ], check=True)
     
+    # 디버그: 원격 URL 출력 (토큰은 마스킹됨)
     subprocess.run(["git", "remote", "-v"], check=True)
+    
     subprocess.run(["git", "add", "announcements_seen.json"], check=True)
     subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=False)
     subprocess.run(["git", "push"], check=True)
@@ -85,14 +88,18 @@ async def send_notification(notices):
     """
     for idx, notice in enumerate(notices, 1):
         title, href, department, date = notice
-        header = f"[부경대 <b>{department}</b> 공지사항 업데이트]"
-        message_text = f"{header}\n\n<b>{title}</b>\n\n{date}"
-        # 인라인 버튼 생성: '자세히 보기' 버튼에 href 연결
+        # 동적 텍스트를 HTML 이스케이프 처리
+        escaped_title = html.escape(title)
+        escaped_department = html.escape(department)
+        escaped_date = html.escape(date)
+        
+        header = f"[부경대 <b>{escaped_department}</b> 공지사항 업데이트]"
+        message_text = f"{header}\n\n<b>{escaped_title}</b>\n\n{escaped_date}"
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="자세히 보기", url=href)]
         ])
         await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
-        # 메시지 사이에 딜레이를 주려면 아래 주석 해제
+        # 필요 시 메시지 사이에 딜레이 추가
         # await asyncio.sleep(1)
 
 async def main():
