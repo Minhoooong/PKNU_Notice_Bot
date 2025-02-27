@@ -120,49 +120,60 @@ async def send_notification(notice):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
+# 메시지 ID 저장을 위한 전역 변수
+message_ids = {}
+
+@dp.message()
+async def track_messages(message: types.Message):
+    """모든 메시지를 기록하여 삭제할 수 있도록 저장"""
+    chat_id = message.chat.id
+    if chat_id not in message_ids:
+        message_ids[chat_id] = []
+    message_ids[chat_id].append(message.message_id)
+
 @dp.message(Command("clear"))
 async def clear_chat(message: types.Message):
+    """최근 기록된 메시지를 삭제"""
     chat_id = message.chat.id
-
-    try:
+    if chat_id in message_ids and message_ids[chat_id]:
         deleted_count = 0
-        async for msg in bot.get_chat_history(chat_id, limit=100):  # 한 번에 최대 100개 가져옴
+        for msg_id in message_ids[chat_id][-100:]:  # 최근 100개까지 삭제 가능
             try:
-                await bot.delete_message(chat_id, msg.message_id)
+                await bot.delete_message(chat_id, msg_id)
                 deleted_count += 1
             except Exception as e:
                 logging.warning(f"메시지 삭제 실패: {e}")
 
-        await message.answer(f"채팅 내역이 초기화되었습니다. ({deleted_count}개 삭제됨)", reply_markup=ReplyKeyboardRemove())
+        # 삭제된 메시지 제거
+        message_ids[chat_id] = message_ids[chat_id][:-deleted_count]
 
-    except Exception as e:
-        logging.error(f"채팅 내역 삭제 중 오류 발생: {e}")
-        await message.answer("채팅 내역을 삭제하는 중 오류가 발생했습니다.")
+        await message.answer(f"채팅 내역이 초기화되었습니다. ({deleted_count}개 삭제됨)", reply_markup=ReplyKeyboardRemove())
+    else:
+        await message.answer("삭제할 채팅 내역이 없습니다.")
 
 @dp.message(Command("clearall"))
 async def clear_all_data(message: types.Message):
+    """채팅 내역과 저장된 공지사항 기록을 모두 삭제"""
     chat_id = message.chat.id
+    deleted_count = 0
 
-    try:
-        deleted_count = 0
-        async for msg in bot.get_chat_history(chat_id, limit=100):  # 최대 100개 가져와서 삭제
+    if chat_id in message_ids and message_ids[chat_id]:
+        for msg_id in message_ids[chat_id][-100:]:  # 최근 100개까지 삭제 가능
             try:
-                await bot.delete_message(chat_id, msg.message_id)
+                await bot.delete_message(chat_id, msg_id)
                 deleted_count += 1
             except Exception as e:
                 logging.warning(f"메시지 삭제 실패: {e}")
 
-        # announcements_seen.json 파일 삭제
-        if os.path.exists("announcements_seen.json"):
-            os.remove("announcements_seen.json")
-            logging.info("announcements_seen.json has been deleted.")
+        # 삭제된 메시지 제거
+        message_ids[chat_id] = message_ids[chat_id][:-deleted_count]
 
-        await message.answer(f"채팅 내역 및 저장된 공지사항이 초기화되었습니다. ({deleted_count}개 삭제됨)", reply_markup=ReplyKeyboardRemove())
+    # announcements_seen.json 삭제
+    if os.path.exists("announcements_seen.json"):
+        os.remove("announcements_seen.json")
+        logging.info("announcements_seen.json has been deleted.")
 
-    except Exception as e:
-        logging.error(f"전체 삭제 중 오류 발생: {e}")
-        await message.answer("전체 삭제를 수행하는 중 오류가 발생했습니다.")
-
+    await message.answer(f"채팅 내역 및 저장된 공지사항이 초기화되었습니다. ({deleted_count}개 삭제됨)", reply_markup=ReplyKeyboardRemove())
 
 # /start 명령어 처리
 @dp.message(Command("start"))
