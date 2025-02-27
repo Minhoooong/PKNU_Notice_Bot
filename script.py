@@ -25,7 +25,7 @@ CHAT_ID = os.environ.get('CHAT_ID')
 
 # 봇 및 Dispatcher 초기화 (HTML 포맷 메시지 사용)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher()
+dp = Dispatcher()  # storage가 필요한 경우 추가 가능
 
 # FSM 상태 정의
 class FilterState(StatesGroup):
@@ -75,7 +75,12 @@ def parse_date(date_str):
 # 공지사항 크롤링
 def get_school_notices():
     try:
+        try:
         response = requests.get(URL, timeout=10)
+        response.raise_for_status()  # HTTP 오류 발생 시 예외 발생
+    except requests.RequestException as e:
+        logging.error(f"Error fetching notices: {e}")
+        return []
         soup = BeautifulSoup(response.text, 'html.parser')
         notices = []
         for tr in soup.find_all("tr"):
@@ -106,8 +111,26 @@ async def send_notification(notice):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-@dp.message(F.text & F.state == FilterState.waiting_for_date)
+@dp.message(Command("start"))
+async def start_command(message: types.Message):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="날짜 입력", callback_data="filter_date")],
+        [InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
+    ])
+    await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
+
+@dp.callback_query(F.data == "filter_date")
+async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
+    await state.set_state(str(FilterState.waiting_for_date))
+    await callback.answer()
+
+@dp.message(F.text)
 async def process_date_input(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state != str(FilterState.waiting_for_date):
+        return
+    
     input_text = message.text.strip()
     current_year = datetime.now().year
     full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
@@ -124,7 +147,9 @@ async def process_date_input(message: types.Message, state: FSMContext):
     await state.clear()
 
 async def main():
-    await dp.start_polling(bot)
+    # 핸들러가 정상적으로 등록되었는지 확인
+logging.info("Starting bot polling...")
+await dp.start_polling(bot)
 
 if __name__ == '__main__':
     asyncio.run(main())
