@@ -200,15 +200,6 @@ async def process_date_input(message: types.Message, state: FSMContext):
     logging.info("Clearing FSM state.")
     await state.clear()
 
-@dp.message(Command("clear"))
-async def clear_announcements(message: types.Message):
-    if os.path.exists("announcements_seen.json"):
-        os.remove("announcements_seen.json")
-        logging.info("announcements_seen.json has been deleted.")
-        await message.answer("✅ 저장된 공지사항 목록이 초기화되었습니다.")
-    else:
-        await message.answer("❌ 초기화할 공지사항 데이터가 없습니다.")
-
 async def main():
     logging.info("Starting bot polling...")
     await dp.start_polling(bot)
