@@ -95,55 +95,17 @@ def get_school_notices(category=""):
     except Exception as e:
         logging.exception("Error in get_school_notices")
         return []
-    try:
-        category_url = f"{URL}?cd={category}" if category else URL
-        response = requests.get(category_url, timeout=10)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
-        notices = []
-        for tr in soup.find_all("tr"):
-            title_td = tr.find("td", class_="bdlTitle")
-            user_td = tr.find("td", class_="bdlUser")
-            date_td = tr.find("td", class_="bdlDate")
-            if title_td and title_td.find("a") and user_td and date_td:
-                a_tag = title_td.find("a")
-                title = a_tag.get_text(strip=True)
-                href = a_tag.get("href")
-                if href and href.startswith("?"):
-                    href = BASE_URL + href
-                elif href and not href.startswith("http"):
-                    href = BASE_URL + "/" + href
-                department = user_td.get_text(strip=True)
-                date = date_td.get_text(strip=True)
-                notices.append((title, href, department, date))
-        return notices
-    except requests.RequestException as e:
-        logging.error(f"Error fetching notices: {e}")
-        return []
-    except Exception as e:
-        logging.exception("Error in get_school_notices")
-        return []
         
 # 새로운 공지사항 확인 및 알림 전송
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
     seen_announcements = load_seen_announcements()
     logging.info(f"Loaded seen announcements: {seen_announcements}")
-    
+
     current_notices = get_school_notices()
     logging.info(f"Fetched current notices: {current_notices}")
-    
+
     new_notices = [notice for notice in current_notices if notice not in seen_announcements]
-    logging.info(f"New notices found: {new_notices}")
-    
-    return new_notices
-    logging.info("Checking for new notices...")
-        seen_announcements = load_seen_announcements()
-    logging.info(f"Loaded seen announcements: {seen_announcements}")
-        current_notices = get_school_notices()
-    logging.info(f"Fetched current notices: {current_notices}")
-        new_notices = [notice for notice in current_notices if notice not in seen_announcements]
     logging.info(f"New notices found: {new_notices}")
 
     if new_notices:
@@ -151,20 +113,17 @@ async def check_for_new_notices():
             await send_notification(notice)
         seen_announcements.update(new_notices)
         save_seen_announcements(seen_announcements)
+        return new_notices
     else:
-        logging.info("새로운 공지 없음")
-
-async def scheduled_updates():
-    while True:
-        await check_for_new_notices()
-        await asyncio.sleep(600)
+        logging.info("✅ 새로운 공지 없음")
+        return []
 
 # 수동으로 새로운 공지사항 확인
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message):
     new_notices = await check_for_new_notices()
     if new_notices:
-        await message.answer("📢 새로운 공지사항을 확인했습니다!")
+        await message.answer(f"📢 {len(new_notices)}개의 새로운 공지사항이 있습니다!")
     else:
         await message.answer("✅ 새로운 공지사항이 없습니다.")
         
