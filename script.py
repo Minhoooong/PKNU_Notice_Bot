@@ -54,18 +54,15 @@ def load_seen_announcements():
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
             seen_data = json.load(f)
-            return [(title, url) for title, url in seen_data]  # ✅ 순서를 유지하는 리스트 반환
+            return [(title, url, department, date) for title, url, department, date in seen_data]  # ✅ 4개 항목 언패킹
     except (FileNotFoundError, json.JSONDecodeError):
         return []
 
 # JSON 파일에 새로운 공지사항 저장 (순서 유지)
 def save_seen_announcements(seen):
     try:
-        seen_list = sorted(seen, key=lambda x: x[1])  # ✅ URL 기준 정렬 (또는 최신순 정렬 가능)
         with open("announcements_seen.json", "w", encoding="utf-8") as f:
-            json.dump(seen_list, f, ensure_ascii=False, indent=4)
-
-        # Git 커밋 및 푸시
+            json.dump(seen, f, ensure_ascii=False, indent=4)  # ✅ 기존 구조 유지
         push_changes()
     except Exception as e:
         logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
@@ -85,10 +82,10 @@ async def check_for_new_notices():
         parsed = urllib.parse.urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}"
 
-    seen_titles_urls = {(title, normalize_url(url)) for title, url in seen_announcements}
+    seen_titles_urls = {(title, normalize_url(url)) for title, url, _, _ in seen_announcements}
 
     new_notices = [
-        (title, href, date) for title, href, _, date in current_notices
+        (title, href, department, date) for title, href, department, date in current_notices
         if (title, normalize_url(href)) not in seen_titles_urls
     ]
     logging.info(f"DEBUG: New notices detected: {new_notices}")
@@ -96,10 +93,9 @@ async def check_for_new_notices():
     if new_notices:
         for notice in new_notices:
             await send_notification(notice)
-        seen_announcements.extend([(title, href) for title, href, _ in new_notices])  # ✅ 리스트에 추가 (순서 유지)
+        seen_announcements.extend(new_notices)  # ✅ 리스트에 추가 (순서 유지)
         save_seen_announcements(seen_announcements)
         logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
-
     else:
         logging.info("✅ 새로운 공지 없음")
         return []
