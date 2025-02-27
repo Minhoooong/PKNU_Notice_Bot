@@ -49,6 +49,63 @@ def parse_date(date_str):
         logging.error(f"Date parsing error for {date_str}: {ve}")
         return None
 
+# 공지사항 크롤링 (함수를 check_for_new_notices()보다 위에 배치)
+def get_school_notices(category=""):
+    try:
+        category_url = f"{URL}?cd={category}" if category else URL
+        response = requests.get(category_url, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        notices = []
+        for tr in soup.find_all("tr"):
+            title_td = tr.find("td", class_="bdlTitle")
+            user_td = tr.find("td", class_="bdlUser")
+            date_td = tr.find("td", class_="bdlDate")
+            if title_td and title_td.find("a") and user_td and date_td:
+                a_tag = title_td.find("a")
+                title = a_tag.get_text(strip=True)
+                href = a_tag.get("href")
+                if href and href.startswith("?"):
+                    href = BASE_URL + href
+                elif href and not href.startswith("http"):
+                    href = BASE_URL + "/" + href
+                department = user_td.get_text(strip=True)
+                date = date_td.get_text(strip=True)
+                notices.append((title, href, department, date))
+        
+        # 날짜 기준 최신순 정렬
+        notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
+        return notices
+    except requests.RequestException as e:
+        logging.error(f"Error fetching notices: {e}")
+        return []
+    except Exception as e:
+        logging.exception("Error in get_school_notices")
+        return []
+
+    # URL 정규화 함수
+    def normalize_url(url):
+        parsed = urllib.parse.urlparse(url)
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}"
+
+    seen_titles_urls = {(title, normalize_url(url)) for title, url, _, _ in seen_announcements}
+
+    new_notices = [
+        (title, href, department, date) for title, href, department, date in current_notices
+        if (title, normalize_url(href)) not in seen_titles_urls
+    ]
+    logging.info(f"DEBUG: New notices detected: {new_notices}")
+
+    if new_notices:
+        for notice in new_notices:
+            await send_notification(notice)
+        seen_announcements.extend(new_notices)  # ✅ 리스트에 추가 (순서 유지)
+        save_seen_announcements(seen_announcements)
+        logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
+    else:
+        logging.info("✅ 새로운 공지 없음")
+        
 # JSON 파일에서 기존 공지사항 로드
 def load_seen_announcements():
     try:
