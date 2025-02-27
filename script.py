@@ -45,6 +45,14 @@ def save_seen_announcements(seen):
     with open("announcements_seen.json", "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False)
 
+# 날짜 파싱 함수
+def parse_date(date_str):
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError as ve:
+        logging.error(f"Date parsing error for {date_str}: {ve}")
+        return None
+
 # 공지사항 크롤링
 def get_school_notices():
     try:
@@ -111,7 +119,7 @@ async def callback_all_notices(callback: CallbackQuery):
 @dp.message(F.text)
 async def process_date_input(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
-    if current_state != FilterState.waiting_for_date.state:
+    if current_state != str(FilterState.waiting_for_date):
         return
     
     input_text = message.text.strip()
