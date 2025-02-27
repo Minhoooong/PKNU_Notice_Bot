@@ -48,6 +48,19 @@ def parse_date(date_str):
         logging.error(f"Date parsing error for {date_str}: {ve}")
         return None
 
+# announcements_seen.json 로드 및 저장
+def load_seen_announcements():
+    try:
+        with open("announcements_seen.json", "r", encoding="utf-8") as f:
+            seen_data = json.load(f)
+            return set(tuple(item) for item in seen_data)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+def save_seen_announcements(seen):
+    with open("announcements_seen.json", "w", encoding="utf-8") as f:
+        json.dump(list(seen), f, ensure_ascii=False, indent=4)
+
 # 공지사항 크롤링
 def get_school_notices(category=""):
     try:
@@ -111,7 +124,26 @@ def get_school_notices(category=""):
     except Exception as e:
         logging.exception("Error in get_school_notices")
         return []
+        
+# 새로운 공지사항 확인 및 알림 전송
+async def check_for_new_notices():
+    seen_announcements = load_seen_announcements()
+    current_notices = get_school_notices()
+    new_notices = [notice for notice in current_notices if notice not in seen_announcements]
 
+    if new_notices:
+        for notice in new_notices:
+            await send_notification(notice)
+        seen_announcements.update(new_notices)
+        save_seen_announcements(seen_announcements)
+    else:
+        logging.info("새로운 공지 없음")
+
+async def scheduled_updates():
+    while True:
+        await check_for_new_notices()
+        await asyncio.sleep(600)
+        
 # 알림 전송
 async def send_notification(notice):
     title, href, department, date = notice
