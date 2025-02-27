@@ -72,6 +72,38 @@ def get_school_notices(category=""):
                 department = user_td.get_text(strip=True)
                 date = date_td.get_text(strip=True)
                 notices.append((title, href, department, date))
+        
+        # 날짜 기준 최신순 정렬
+        notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
+        return notices
+    except requests.RequestException as e:
+        logging.error(f"Error fetching notices: {e}")
+        return []
+    except Exception as e:
+        logging.exception("Error in get_school_notices")
+        return []
+    try:
+        category_url = f"{URL}?cd={category}" if category else URL
+        response = requests.get(category_url, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        notices = []
+        for tr in soup.find_all("tr"):
+            title_td = tr.find("td", class_="bdlTitle")
+            user_td = tr.find("td", class_="bdlUser")
+            date_td = tr.find("td", class_="bdlDate")
+            if title_td and title_td.find("a") and user_td and date_td:
+                a_tag = title_td.find("a")
+                title = a_tag.get_text(strip=True)
+                href = a_tag.get("href")
+                if href and href.startswith("?"):
+                    href = BASE_URL + href
+                elif href and not href.startswith("http"):
+                    href = BASE_URL + "/" + href
+                department = user_td.get_text(strip=True)
+                date = date_td.get_text(strip=True)
+                notices.append((title, href, department, date))
         return notices
     except requests.RequestException as e:
         logging.error(f"Error fetching notices: {e}")
@@ -133,39 +165,23 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
 @dp.message(F.text)
 async def process_date_input(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
-    logging.info(f"Current FSM state raw: {current_state}")
-
-    # 상태 비교 수정
-    if current_state != "FilterState:waiting_for_date":
-        logging.warning("Received date input, but state is incorrect.")
+    if current_state != str(FilterState.waiting_for_date):
         return
-
+    
     input_text = message.text.strip()
-    logging.info(f"Received date input: {input_text}")
-
     current_year = datetime.now().year
     full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
-    logging.info(f"Converted full date string: {full_date_str}")
-
     filter_date = parse_date(full_date_str)
-
-    if filter_date is None:
-        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 입력해 주세요.")
-        return
-
+    
     notices = [n for n in get_school_notices() if parse_date(n[3]) == filter_date]
-
     if not notices:
-        logging.info(f"No notices found for {full_date_str}")
         await message.answer(f"{input_text} 날짜의 공지사항이 없습니다.")
     else:
         for notice in notices:
             await send_notification(notice)
         await message.answer(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
-
-    logging.info("Clearing FSM state.")
+    
     await state.clear()
-
 
 async def main():
     logging.info("Starting bot polling...")
