@@ -4,8 +4,10 @@ import requests
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+from aiogram.filters import Command, Text
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
 import json
 import os
 import subprocess
@@ -21,9 +23,13 @@ BASE_URL = 'https://www.pknu.ac.kr'
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 
-# 봇 초기화 (HTML 포맷 메시지 사용)
+# 봇 및 Dispatcher 초기화 (HTML 포맷 메시지 사용)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()  # aiogram v3에서는 인자 없이 생성
+
+# FSM 상태 정의: 날짜 입력 대기
+class FilterState(StatesGroup):
+    waiting_for_date = State()
 
 def load_seen_announcements():
     try:
@@ -112,58 +118,73 @@ async def send_notification(notice):
     ])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
+# /start 명령어 핸들러: 두 개의 버튼(날짜 입력, 전체 공지사항)을 포함한 인라인 키보드 전송
 @dp.message(Command(commands=["start"]))
 async def start_command(message: types.Message):
-    """
-    /start 명령어를 처리하여 인사 메시지와 사용 가능한 명령어 안내를 전송합니다.
-    """
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="날짜 입력", callback_data="filter_date")],
+        [InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
+    ])
     reply_text = (
         "안녕하세요! 공지사항 봇입니다.\n\n"
-        "사용 가능한 명령어:\n"
-        "/filter YYYY-MM-DD  -  지정 날짜의 공지사항 필터링\n"
+        "아래 버튼을 선택해 주세요:"
     )
-    await message.reply(reply_text)
+    await message.reply(reply_text, reply_markup=keyboard)
 
-@dp.message(Command(commands=["filter"]))
-async def filter_announcements(message: types.Message):
-    """
-    /filter 명령어를 처리하여 사용자가 입력한 날짜(YYYY-MM-DD)에 해당하는 공지사항을 필터링하여 전송합니다.
-    """
+# Callback Query 핸들러: "날짜 입력" 버튼 클릭 시
+@dp.callback_query(Text(equals="filter_date"))
+async def callback_filter_date(callback: types.CallbackQuery, state: FSMContext):
+    await callback.message.edit_reply_markup()  # 키보드 제거
+    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27).")
+    await state.set_state(FilterState.waiting_for_date)
+    await callback.answer()
+
+# Callback Query 핸들러: "전체 공지사항" 버튼 클릭 시
+@dp.callback_query(Text(equals="all_notices"))
+async def callback_all_notices(callback: types.CallbackQuery):
+    await callback.message.edit_reply_markup()  # 키보드 제거
+    notices = get_school_notices()
+    if not notices:
+        await callback.message.answer("전체 공지사항이 없습니다.")
+    else:
+        # 최신순 정렬
+        sorted_notices = sorted(notices, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
+        for notice in sorted_notices:
+            await send_notification(notice)
+    await callback.answer("전체 공지사항을 전송했습니다.")
+
+# FSM 메시지 핸들러: MM/DD 날짜 입력 처리
+@dp.message(Text(), state=FilterState.waiting_for_date)
+async def process_date_input(message: types.Message, state: FSMContext):
+    input_text = message.text.strip()
+    logging.info(f"Received date input: {input_text}")
     try:
-        parts = message.text.split(maxsplit=1)
-        args = parts[1].strip() if len(parts) > 1 else ""
-        logging.info(f"/filter command received with args: {args}")
-        if not args:
-            await message.reply("날짜 형식(YYYY-MM-DD)을 입력해 주세요. 예: /filter 2025-02-27")
-            return
-        
-        filter_date = parse_date(args)
+        # 현재 연도를 붙여 YYYY-MM-DD 형식으로 변환 (예: "02/27" → "2025-02-27"; 필요 시 현재 연도 사용)
+        current_year = "2025"  # 또는 datetime.now().year
+        full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+        logging.info(f"Converted full date: {full_date_str}")
+        filter_date = parse_date(full_date_str)
         if not filter_date:
-            await message.reply("올바른 날짜 형식(YYYY-MM-DD)을 입력해 주세요.")
+            await message.reply("날짜 변환에 실패했습니다. 올바른 MM/DD 형식으로 입력해 주세요.")
             return
         
         all_notices = load_seen_announcements() + get_school_notices()
-        logging.info(f"Total notices loaded: {len(all_notices)}")
-        for n in set(all_notices):
-            logging.info(f"Notice: {n}")
-        
         filtered = [n for n in set(all_notices) if parse_date(n[3]) == filter_date]
         if not filtered:
-            await message.reply(f"{args} 날짜의 공지사항이 없습니다.")
-            return
-        
-        sorted_filtered = sorted(filtered, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
-        for notice in sorted_filtered:
-            await send_notification(notice)
-        await message.reply(f"{args} 날짜의 공지사항을 전송했습니다.")
+            await message.reply(f"{input_text} 날짜의 공지사항이 없습니다.")
+        else:
+            sorted_filtered = sorted(filtered, key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
+            for notice in sorted_filtered:
+                await send_notification(notice)
+            await message.reply(f"{input_text} 날짜의 공지사항을 전송했습니다.")
     except Exception as e:
-        logging.exception("Error during filtering")
-        await message.reply("공지사항 필터링 중 에러가 발생했습니다.")
+        logging.exception("Error during date input processing")
+        await message.reply("날짜 처리 중 에러가 발생했습니다.")
+    finally:
+        await state.clear()
 
+# 스케줄링 작업: 자동 업데이트 및 새로운 공지 알림 (별도 태스크)
 async def scheduled_updates():
-    """
-    자동 업데이트 작업: 공지사항을 크롤링하여 새로운 공지가 있으면 전송하고, 상태 파일을 업데이트합니다.
-    """
     previous_notices = load_seen_announcements()
     current_notices = get_school_notices()
     new_notices = [n for n in current_notices if n not in previous_notices]
@@ -178,15 +199,14 @@ async def scheduled_updates():
     commit_state_changes()
 
 async def main():
-    # 스케줄링 작업을 별도 태스크로 실행
-    scheduled_task = asyncio.create_task(scheduled_updates())
+    # 스케줄링 작업을 별도 태스크로 실행하고, 10분 후 폴링 종료 (예시)
+    asyncio.create_task(scheduled_updates())
     try:
-        # 폴링을 10분 동안 실행 후 자동 종료하도록 타임아웃 설정 (예: 600초)
         await asyncio.wait_for(dp.start_polling(bot), timeout=600)
     except asyncio.TimeoutError:
         logging.info("Polling timed out after 10 minutes. Terminating this run.")
     finally:
-        scheduled_task.cancel()
+        pass
 
 if __name__ == '__main__':
     asyncio.run(main())
