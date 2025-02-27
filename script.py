@@ -106,7 +106,7 @@ async def send_notification(notice):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-@dp.message(F.text, state=FilterState.waiting_for_date)
+@dp.message(F.text & F.state == FilterState.waiting_for_date)
 async def process_date_input(message: types.Message, state: FSMContext):
     input_text = message.text.strip()
     current_year = datetime.now().year
