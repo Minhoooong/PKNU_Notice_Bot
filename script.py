@@ -4,7 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.bot import DefaultBotProperties
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -113,6 +113,22 @@ async def start_command(message: types.Message):
         [InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
+
+@dp.callback_query(F.data == "filter_date")
+async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
+    await state.set_state(FilterState.waiting_for_date.state)
+    await callback.answer()
+
+@dp.callback_query(F.data == "all_notices")
+async def callback_all_notices(callback: CallbackQuery):
+    notices = get_school_notices()
+    if not notices:
+        await callback.message.answer("전체 공지사항이 없습니다.")
+    else:
+        for notice in notices:
+            await send_notification(notice)
+    await callback.answer()
 
 async def main():
     await dp.start_polling(bot)
