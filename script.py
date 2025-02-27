@@ -106,30 +106,30 @@ async def send_notification(notice):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-# /start 명령어
-@dp.message(Command("start"))
-async def start_command(message: types.Message):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="날짜 입력", callback_data="filter_date")],
-        [InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
-    ])
-    await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
-
-@dp.callback_query(F.data == "filter_date")
-async def callback_filter_date(callback: types.CallbackQuery, state: FSMContext):
-    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
-    await state.set_state(FilterState.waiting_for_date.state)
-    await callback.answer()
-
-@dp.callback_query(F.data == "all_notices")
-async def callback_all_notices(callback: types.CallbackQuery):
-    notices = get_school_notices()
-    if not notices:
-        await callback.message.answer("전체 공지사항이 없습니다.")
-    else:
-        for notice in notices:
-            await send_notification(notice)
-    await callback.answer()
+@dp.message(F.text)
+async def process_date_input(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state != str(FilterState.waiting_for_date):
+        return
+    
+    try:
+        input_text = message.text.strip()
+        current_year = datetime.now().year
+        full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+        filter_date = parse_date(full_date_str)
+        
+        notices = [n for n in get_school_notices() if parse_date(n[3]) == filter_date]
+        if not notices:
+            await message.answer(f"{input_text} 날짜의 공지사항이 없습니다.")
+        else:
+            for notice in notices:
+                await send_notification(notice)
+            await message.answer(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
+    except Exception:
+        logging.exception("Error processing date input")
+        await message.answer("날짜 처리 중 오류 발생")
+    finally:
+        await state.clear()
 
 async def main():
     await dp.start_polling(bot)
