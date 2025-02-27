@@ -42,14 +42,13 @@ def save_seen_announcements(seen):
 def commit_state_changes():
     """
     상태 파일의 변경사항을 Git에 커밋하고 푸시합니다.
-    GITHUB_TOKEN을 사용하여 원격 URL을 재설정합니다.
+    개인 액세스 토큰(MY_PAT)을 사용하여 원격 URL을 재설정합니다.
     """
-    # Git 설정 (이메일과 사용자 이름은 필요에 따라 수정)
     subprocess.run(["git", "config", "--global", "user.email", "you@example.com"], check=True)
     subprocess.run(["git", "config", "--global", "user.name", "YourGitHubUsername"], check=True)
     
-    # GITHUB_TOKEN 사용하여 원격 URL 재설정
-    token = os.environ.get("GITHUB_TOKEN")
+    # MY_PAT 환경 변수를 사용하여 원격 URL 재설정
+    token = os.environ.get("MY_PAT")
     if token:
         subprocess.run([
             "git", "remote", "set-url", "origin",
