@@ -62,8 +62,16 @@ def save_seen_announcements(seen):
     try:
         with open("announcements_seen.json", "w", encoding="utf-8") as f:
             json.dump(list(seen), f, ensure_ascii=False, indent=4)
+
+        # Git 커밋 및 푸시 (GitHub Actions 실행 시 JSON 데이터 유지)
+        subprocess.run(["git", "config", "--global", "user.email", "github-actions@github.com"], check=True)
+        subprocess.run(["git", "config", "--global", "user.name", "github-actions"], check=True)
+        subprocess.run(["git", "add", "announcements_seen.json"], check=True)
+        subprocess.run(["git", "commit", "-m", "Update announcements_seen.json"], check=True)
+        subprocess.run(["git", "push", "origin", "main"], check=True)
+
     except Exception as e:
-        logging.error(f"Failed to save announcements_seen.json: {e}")
+        logging.error(f"Failed to save announcements_seen.json and push to GitHub: {e}")
 
 
 # 공지사항 크롤링
