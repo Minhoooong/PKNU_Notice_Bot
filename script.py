@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command
 import json
 import os
 import subprocess
@@ -20,7 +21,6 @@ CHAT_ID = os.environ.get('CHAT_ID')
 # 봇 초기화 (HTML 포맷 메시지 사용)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()  # aiogram v3에서는 인자 없이 생성
-
 logging.basicConfig(level=logging.INFO)
 
 def load_seen_announcements():
@@ -122,7 +122,7 @@ async def scheduled_updates():
     commit_state_changes()
 
 # 명령어 핸들러: /filter YYYY-MM-DD
-@dp.message_handler(commands=['filter'])
+@dp.message(Command(commands=["filter"]))
 async def filter_announcements(message: types.Message):
     try:
         args = message.get_args().strip()
@@ -154,7 +154,7 @@ async def filter_announcements(message: types.Message):
         await message.reply("공지사항 필터링 중 에러가 발생했습니다.")
 
 # /start 명령어 핸들러
-@dp.message_handler(commands=['start'])
+@dp.message(Command(commands=["start"]))
 async def start_command(message: types.Message):
     reply_text = (
         "안녕하세요! 공지사항 봇입니다.\n\n"
@@ -166,7 +166,7 @@ async def start_command(message: types.Message):
 async def main():
     # 스케줄링 작업을 별도 태스크로 실행한 후, 봇 명령어 처리를 위해 폴링 시작
     asyncio.create_task(scheduled_updates())
-    await dp.start_polling(bot)  # start_polling 호출 시 bot 인스턴스를 전달
+    await dp.start_polling(bot)
 
 if __name__ == '__main__':
     asyncio.run(main())
