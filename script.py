@@ -60,14 +60,24 @@ def commit_state_changes():
 def get_school_notices():
     response = requests.get(URL)
     soup = BeautifulSoup(response.text, 'html.parser')
-    # "bdlTitle" 클래스를 가진 div 요소를 찾음
-    notice_container = soup.find("div", class_="bdlTitle")
     notices = set()
-    if notice_container and notice_container.a:
-        title = notice_container.a.get('title')
-        href = BASE_URL + notice_container.a.get('href')
-        notices.add((title, href))
+    
+    # 모든 <tr> 요소를 순회하면서 공지사항 정보를 추출합니다.
+    for tr in soup.find_all("tr"):
+        # 공지사항 제목이 있는 <td class="bdlTitle"> 요소 찾기
+        title_td = tr.find("td", class_="bdlTitle")
+        if title_td:
+            a_tag = title_td.find("a")
+            if a_tag:
+                # <a> 태그의 텍스트(제목)와 href(링크) 추출
+                title = a_tag.get_text(strip=True)
+                href = a_tag.get("href")
+                # 상대 경로인 경우 BASE_URL을 덧붙여 절대 경로로 변환
+                if href.startswith("?"):
+                    href = BASE_URL + "/" + href
+                notices.add((title, href))
     return notices
+
 
 async def send_notification(notices):
     """
