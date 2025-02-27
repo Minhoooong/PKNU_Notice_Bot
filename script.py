@@ -74,7 +74,7 @@ def push_changes():
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
 
-# 공지사항 크롤링
+# 공지사항 크롤링 (부서 정보 제거)
 def get_school_notices(category=""):
     try:
         category_url = f"{URL}?cd={category}" if category else URL
@@ -95,9 +95,10 @@ def get_school_notices(category=""):
                 elif href and not href.startswith("http"):
                     href = BASE_URL + "/" + href
                 date = date_td.get_text(strip=True)
-                notices.append((title, href, date))
+                notices.append((title, href, date))  # ✅ department 제거
         
-        notices.sort(key=lambda x: datetime.strptime(x[2], "%Y-%m-%d") if x[2] else datetime.min, reverse=True)
+        # 날짜 기준 최신순 정렬
+        notices.sort(key=lambda x: parse_date(x[2]) or datetime.min, reverse=True)
         return notices
     except requests.RequestException as e:
         logging.error(f"Error fetching notices: {e}")
@@ -105,56 +106,63 @@ def get_school_notices(category=""):
     except Exception as e:
         logging.exception("Error in get_school_notices")
         return []
-        
+
+# JSON 파일에서 기존 공지사항(링크) 로드
+def load_seen_announcements():
+    try:
+        with open("announcements_seen.json", "r", encoding="utf-8") as f:
+            seen_data = json.load(f)
+            return {(title, url) for title, url in seen_data}  # ✅ 2개 요소 (title, url)만 저장
+    except (FileNotFoundError, json.JSONDecodeError):
+        logging.warning("⚠️ announcements_seen.json not found or corrupted. Initializing new set.")
+        return set()
+
+# JSON 파일에 새로운 공지사항(링크) 저장
+def save_seen_announcements(seen):
+    try:
+        with open("announcements_seen.json", "w", encoding="utf-8") as f:
+            json.dump(sorted(seen), f, ensure_ascii=False, indent=4)  # ✅ set을 list로 변환하여 저장
+        push_changes()
+    except Exception as e:
+        logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
+
 # 새로운 공지사항 확인 및 알림 전송
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
     
-    seen_links = load_seen_announcements()
-    logging.info(f"Loaded seen announcements: {seen_links}")
+    seen_announcements = load_seen_announcements()
+    logging.info(f"Loaded seen announcements: {seen_announcements}")
 
     current_notices = get_school_notices()
     logging.info(f"Fetched current notices: {current_notices}")
 
-    # URL만 비교하여 새로운 공지 감지
-    new_notices = [notice for notice in current_notices if notice[1] not in seen_links]
+    # URL 정규화 함수
+    def normalize_url(url):
+        parsed = urllib.parse.urlparse(url)
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}"
 
+    seen_titles_urls = {(title, normalize_url(url)) for title, url in seen_announcements}
+
+    new_notices = [
+        (title, href, date) for title, href, date in current_notices
+        if (title, normalize_url(href)) not in seen_titles_urls
+    ]
     logging.info(f"DEBUG: New notices detected: {new_notices}")
 
     if new_notices:
         for notice in new_notices:
             await send_notification(notice)
-        seen_links.update([notice[1] for notice in new_notices])
-        save_seen_announcements(seen_links)
-        return new_notices
+        seen_announcements.update((title, href) for title, href, _ in new_notices)  # ✅ 2개 요소만 저장
+        save_seen_announcements(seen_announcements)
+        logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
 
-    logging.info("✅ 새로운 공지 없음")
-    return []
-
-# 알림 전송
+# 알림 전송 (부서 정보 제거)
 async def send_notification(notice):
-    title, href, date = notice
-    message_text = f"[부경대 공지사항 업데이트]\n\n<b>{html.escape(title)}</b>\n\n📅 {html.escape(date)}"
+    title, href, date = notice  # ✅ department 제거
+    message_text = f"📢 <b>{html.escape(title)}</b>\n📅 {html.escape(date)}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
-
-# 명령어 처리
-@dp.message(Command("checknotices"))
-async def manual_check_notices(message: types.Message):
-    new_notices = await check_for_new_notices()
-    if new_notices:
-        await message.answer(f"📢 {len(new_notices)}개의 새로운 공지사항이 있습니다!")
-    else:
-        await message.answer("✅ 새로운 공지사항이 없습니다.")
-        
-# 알림 전송
-async def send_notification(notice):
-    title, href, department, date = notice
-    message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
-    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
-    await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
-
+    
 # 메시지 ID 저장을 위한 전역 변수
 
 # /start 명령어 처리
