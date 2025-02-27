@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
-from aiogram.filters import Command  # Text 필터는 제거합니다.
+from aiogram.filters import Command  # Text 필터 사용 안 함
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
@@ -117,7 +117,7 @@ async def start_command(message: types.Message):
     await message.reply(reply_text, reply_markup=keyboard)
 
 # Callback Query 핸들러: "날짜 입력" 버튼
-@dp.callback_query(Text(equals="filter_date"))
+@dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
@@ -125,7 +125,7 @@ async def callback_filter_date(callback: types.CallbackQuery, state: FSMContext)
     await callback.answer()
 
 # Callback Query 핸들러: "전체 공지사항" 버튼
-@dp.callback_query(Text(equals="all_notices"))
+@dp.callback_query(lambda c: c.data == "all_notices")
 async def callback_all_notices(callback: types.CallbackQuery):
     await callback.message.edit_reply_markup(reply_markup=None)
     notices = get_school_notices()
@@ -138,7 +138,6 @@ async def callback_all_notices(callback: types.CallbackQuery):
     await callback.answer("전체 공지사항을 전송했습니다.")
 
 # FSM 메시지 핸들러: MM/DD 형식 날짜 입력 처리
-# Text 필터 대신 단순히 state에 있는 모든 메시지를 처리합니다.
 @dp.message(state=FilterState.waiting_for_date)
 async def process_date_input(message: types.Message, state: FSMContext):
     input_text = message.text.strip()
