@@ -147,6 +147,15 @@ def push_changes():
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
 
+# 수동으로 새로운 공지사항 확인
+@dp.message(Command("checknotices"))
+async def manual_check_notices(message: types.Message):
+    new_notices = await check_for_new_notices()
+    if new_notices:
+        await message.answer(f"📢 {len(new_notices)}개의 새로운 공지사항이 있습니다!")
+    else:
+        await message.answer("✅ 새로운 공지사항이 없습니다.")
+
 # 알림 전송
 async def send_notification(notice):
     title, href, department, date = notice
