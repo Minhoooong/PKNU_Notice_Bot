@@ -13,6 +13,7 @@ import os
 import subprocess
 import html
 from datetime import datetime
+import urllib.parse
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -99,13 +100,27 @@ def get_school_notices(category=""):
 # 새로운 공지사항 확인 및 알림 전송
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
+    
     seen_announcements = load_seen_announcements()
     logging.info(f"Loaded seen announcements: {seen_announcements}")
 
     current_notices = get_school_notices()
     logging.info(f"Fetched current notices: {current_notices}")
 
-    new_notices = [notice for notice in current_notices if notice not in seen_announcements]
+    # URL 정규화 함수
+    def normalize_url(url):
+        parsed = urllib.parse.urlparse(url)
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}"
+
+    # 기존 공지사항을 "제목 + 정규화된 URL" 기준으로 저장
+    seen_titles_urls = { (title, normalize_url(url)) for title, url, _, _ in seen_announcements }
+
+    # 새로운 공지사항 확인 (기존 데이터에 없는 것만 추가)
+    new_notices = [
+        notice for notice in current_notices
+        if (notice[0], normalize_url(notice[1])) not in seen_titles_urls
+    ]
+
     logging.info(f"New notices found: {new_notices}")
 
     if new_notices:
