@@ -122,16 +122,47 @@ async def send_notification(notice):
 
 @dp.message(Command("clear"))
 async def clear_chat(message: types.Message):
-    await message.answer("채팅 내역이 초기화되었습니다.", reply_markup=ReplyKeyboardRemove())
-    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+    chat_id = message.chat.id
+
+    try:
+        deleted_count = 0
+        async for msg in bot.get_chat_history(chat_id, limit=100):  # 한 번에 최대 100개 가져옴
+            try:
+                await bot.delete_message(chat_id, msg.message_id)
+                deleted_count += 1
+            except Exception as e:
+                logging.warning(f"메시지 삭제 실패: {e}")
+
+        await message.answer(f"채팅 내역이 초기화되었습니다. ({deleted_count}개 삭제됨)", reply_markup=ReplyKeyboardRemove())
+
+    except Exception as e:
+        logging.error(f"채팅 내역 삭제 중 오류 발생: {e}")
+        await message.answer("채팅 내역을 삭제하는 중 오류가 발생했습니다.")
 
 @dp.message(Command("clearall"))
 async def clear_all_data(message: types.Message):
-    if os.path.exists("announcements_seen.json"):
-        os.remove("announcements_seen.json")
-        logging.info("announcements_seen.json has been deleted.")
-    await message.answer("채팅 내역 및 저장된 공지사항이 초기화되었습니다.", reply_markup=ReplyKeyboardRemove())
-    await bot.delete_message(chat_id=message.chat.id, message_id=message.message_id)
+    chat_id = message.chat.id
+
+    try:
+        deleted_count = 0
+        async for msg in bot.get_chat_history(chat_id, limit=100):  # 최대 100개 가져와서 삭제
+            try:
+                await bot.delete_message(chat_id, msg.message_id)
+                deleted_count += 1
+            except Exception as e:
+                logging.warning(f"메시지 삭제 실패: {e}")
+
+        # announcements_seen.json 파일 삭제
+        if os.path.exists("announcements_seen.json"):
+            os.remove("announcements_seen.json")
+            logging.info("announcements_seen.json has been deleted.")
+
+        await message.answer(f"채팅 내역 및 저장된 공지사항이 초기화되었습니다. ({deleted_count}개 삭제됨)", reply_markup=ReplyKeyboardRemove())
+
+    except Exception as e:
+        logging.error(f"전체 삭제 중 오류 발생: {e}")
+        await message.answer("전체 삭제를 수행하는 중 오류가 발생했습니다.")
+
 
 # /start 명령어 처리
 @dp.message(Command("start"))
