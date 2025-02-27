@@ -132,7 +132,7 @@ async def start_command(message: types.Message):
 # 날짜 입력 요청 처리
 @dp.callback_query(F.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
+    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 01/31):")
     await state.set_state(FilterState.waiting_for_date)
     await callback.answer()
 
@@ -155,7 +155,7 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
     if not notices:
         await callback.message.answer("해당 카테고리의 공지사항이 없습니다.")
     else:
-        for notice in notices[:5]:  # 최근 5개만 표시
+        for notice in notices[:7]:  # 최근 5개만 표시
             await send_notification(notice)
     
     await state.clear()
@@ -165,23 +165,39 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
 @dp.message(F.text)
 async def process_date_input(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
-    if current_state != str(FilterState.waiting_for_date):
+    logging.info(f"Current FSM state raw: {current_state}")
+
+    # 상태 비교 수정
+    if current_state != "FilterState:waiting_for_date":
+        logging.warning("Received date input, but state is incorrect.")
         return
-    
+
     input_text = message.text.strip()
+    logging.info(f"Received date input: {input_text}")
+
     current_year = datetime.now().year
     full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+    logging.info(f"Converted full date string: {full_date_str}")
+
     filter_date = parse_date(full_date_str)
-    
+
+    if filter_date is None:
+        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 입력해 주세요.")
+        return
+
     notices = [n for n in get_school_notices() if parse_date(n[3]) == filter_date]
+
     if not notices:
+        logging.info(f"No notices found for {full_date_str}")
         await message.answer(f"{input_text} 날짜의 공지사항이 없습니다.")
     else:
         for notice in notices:
             await send_notification(notice)
         await message.answer(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
-    
+
+    logging.info("Clearing FSM state.")
     await state.clear()
+
 
 async def main():
     logging.info("Starting bot polling...")
