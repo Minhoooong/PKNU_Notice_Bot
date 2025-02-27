@@ -250,15 +250,16 @@ async def run_bot():
     """
     try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
-        await asyncio.gather(
-            dp.start_polling(bot),  # 봇 실행
-            asyncio.sleep(600)  # 10분 후 종료
-        )
+        polling_task = asyncio.create_task(dp.start_polling(bot))  # 폴링을 별도 태스크로 실행
+        await asyncio.sleep(60)  # 10분 대기
+        logging.info("🛑 Stopping bot polling after 10 minutes...")
+        polling_task.cancel()  # 폴링 태스크 취소
+        await dp.stop_polling()  # Dispatcher 종료
     except Exception as e:
         logging.error(f"❌ Bot error: {e}")
     finally:
-        logging.info("🛑 Stopping bot polling after 10 minutes.")
         await bot.session.close()  # 봇 세션 닫기
+        logging.info("✅ Bot session closed.")
 
 if __name__ == '__main__':
     asyncio.run(run_bot())
