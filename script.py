@@ -32,7 +32,7 @@ CATEGORY_CODES = {
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 
-# 봇 및 Dispatcher 초기화 (HTML 포맷 메시지 사용)
+# 봇 및 Dispatcher 초기화
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
@@ -49,7 +49,25 @@ def parse_date(date_str):
         logging.error(f"Date parsing error for {date_str}: {ve}")
         return None
 
-# 공지사항 크롤링 (함수를 check_for_new_notices()보다 위에 배치)
+# JSON 파일 로드 (유연한 데이터 구조 처리)
+def load_seen_announcements():
+    try:
+        with open("announcements_seen.json", "r", encoding="utf-8") as f:
+            seen_data = json.load(f)
+            return {(item[0], item[1]) if len(item) == 2 else tuple(item) for item in seen_data}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+# JSON 파일 저장 (중복 제거 후 리스트 변환)
+def save_seen_announcements(seen):
+    try:
+        with open("announcements_seen.json", "w", encoding="utf-8") as f:
+            json.dump([list(item) for item in seen], f, ensure_ascii=False, indent=4)
+        push_changes()
+    except Exception as e:
+        logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
+
+# 공지사항 크롤링
 def get_school_notices(category=""):
     try:
         category_url = f"{URL}?cd={category}" if category else URL
@@ -74,7 +92,6 @@ def get_school_notices(category=""):
                 date = date_td.get_text(strip=True)
                 notices.append((title, href, department, date))
         
-        # 날짜 기준 최신순 정렬
         notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
         return notices
     except requests.RequestException as e:
@@ -83,47 +100,7 @@ def get_school_notices(category=""):
     except Exception as e:
         logging.exception("Error in get_school_notices")
         return []
-
-    # URL 정규화 함수
-    def normalize_url(url):
-        parsed = urllib.parse.urlparse(url)
-        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}"
-
-    seen_titles_urls = {(title, normalize_url(url)) for title, url, _, _ in seen_announcements}
-
-    new_notices = [
-        (title, href, department, date) for title, href, department, date in current_notices
-        if (title, normalize_url(href)) not in seen_titles_urls
-    ]
-    logging.info(f"DEBUG: New notices detected: {new_notices}")
-
-    if new_notices:
-        for notice in new_notices:
-            await send_notification(notice)
-        seen_announcements.extend(new_notices)  # ✅ 리스트에 추가 (순서 유지)
-        save_seen_announcements(seen_announcements)
-        logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
-    else:
-        logging.info("✅ 새로운 공지 없음")
         
-# JSON 파일에서 기존 공지사항 로드
-def load_seen_announcements():
-    try:
-        with open("announcements_seen.json", "r", encoding="utf-8") as f:
-            seen_data = json.load(f)
-            return [(title, url, department, date) for title, url, department, date in seen_data]  # ✅ 4개 항목 언패킹
-    except (FileNotFoundError, json.JSONDecodeError):
-        return []
-
-# JSON 파일에 새로운 공지사항 저장 (순서 유지)
-def save_seen_announcements(seen):
-    try:
-        with open("announcements_seen.json", "w", encoding="utf-8") as f:
-            json.dump(seen, f, ensure_ascii=False, indent=4)  # ✅ 기존 구조 유지
-        push_changes()
-    except Exception as e:
-        logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
-
 # 새로운 공지사항 확인 및 알림 전송
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
@@ -133,13 +110,12 @@ async def check_for_new_notices():
 
     current_notices = get_school_notices()
     logging.info(f"Fetched current notices: {current_notices}")
-
-    # URL 정규화 함수
+    
     def normalize_url(url):
         parsed = urllib.parse.urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}"
-
-    seen_titles_urls = {(title, normalize_url(url)) for title, url, _, _ in seen_announcements}
+    
+    seen_titles_urls = {(title, normalize_url(url)) for title, url, *_ in seen_announcements}
 
     new_notices = [
         (title, href, department, date) for title, href, department, date in current_notices
@@ -150,34 +126,27 @@ async def check_for_new_notices():
     if new_notices:
         for notice in new_notices:
             await send_notification(notice)
-        seen_announcements.extend(new_notices)  # ✅ 리스트에 추가 (순서 유지)
+        seen_announcements.update(new_notices)
         save_seen_announcements(seen_announcements)
         logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
     else:
         logging.info("✅ 새로운 공지 없음")
-        return []
         
-# GitHub에 announcements_seen.json 푸시
+# GitHub Push (PAT 예외 처리 추가)
 def push_changes():
     try:
+        pat = os.environ.get("MY_PAT")
+        if not pat:
+            logging.error("❌ GitHub PAT가 설정되지 않았습니다. Push를 생략합니다.")
+            return
+
         subprocess.run(["git", "add", "announcements_seen.json"], check=True)
         subprocess.run(["git", "commit", "-m", "Update announcements_seen.json"], check=True)
-        subprocess.run([
-            "git", "push", "https://x-access-token:{}@github.com/Minhoooong/PKNU_Notice_Bot.git".format(os.environ["MY_PAT"])
-        ], check=True)
+        subprocess.run(["git", "push", f"https://x-access-token:{pat}@github.com/Minhoooong/PKNU_Notice_Bot.git"], check=True)
         logging.info("✅ Successfully pushed changes to GitHub.")
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
 
-# 수동으로 새로운 공지사항 확인
-@dp.message(Command("checknotices"))
-async def manual_check_notices(message: types.Message):
-    new_notices = await check_for_new_notices()
-    if new_notices:
-        await message.answer(f"📢 {len(new_notices)}개의 새로운 공지사항이 있습니다!")
-    else:
-        await message.answer("✅ 새로운 공지사항이 없습니다.")
-        
 # 알림 전송
 async def send_notification(notice):
     title, href, department, date = notice
@@ -185,6 +154,13 @@ async def send_notification(notice):
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
+
+async def main():
+    logging.info("Starting bot polling...")
+    await dp.start_polling(bot)
+
+if __name__ == '__main__':
+    asyncio.run(main())
 
 # 메시지 ID 저장을 위한 전역 변수
 
