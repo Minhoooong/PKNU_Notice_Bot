@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
-from aiogram.filters import Command, Text
+from aiogram.filters import Command  # Text 필터는 제거합니다.
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
@@ -138,7 +138,8 @@ async def callback_all_notices(callback: types.CallbackQuery):
     await callback.answer("전체 공지사항을 전송했습니다.")
 
 # FSM 메시지 핸들러: MM/DD 형식 날짜 입력 처리
-@dp.message(Text(), state=FilterState.waiting_for_date)
+# Text 필터 대신 단순히 state에 있는 모든 메시지를 처리합니다.
+@dp.message(state=FilterState.waiting_for_date)
 async def process_date_input(message: types.Message, state: FSMContext):
     input_text = message.text.strip()
     logging.info(f"Received date input: {input_text}")
