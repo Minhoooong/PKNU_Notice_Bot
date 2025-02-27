@@ -20,14 +20,19 @@ logging.basicConfig(level=logging.INFO)
 def load_seen_announcements():
     """
     상태 파일(announcements_seen.json)에서 이전에 받은 공지사항 목록을 읽어옵니다.
-    파일이 없으면 빈 집합을 반환합니다.
+    파일이 없거나 내용이 비어있으면 빈 집합을 반환합니다.
     """
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return set(tuple(item) for item in data)
+            try:
+                data = json.load(f)
+                return set(tuple(item) for item in data)
+            except json.JSONDecodeError:
+                # 파일 내용이 비어있거나 JSON 형식이 잘못된 경우 빈 집합 반환
+                return set()
     except FileNotFoundError:
         return set()
+
 
 def save_seen_announcements(seen):
     """
