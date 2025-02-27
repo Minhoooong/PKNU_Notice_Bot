@@ -3,7 +3,7 @@ name: Check University Announcements
 on:
   schedule:
     - cron: '*/10 * * * *'  # 10분마다 실행
-  workflow_dispatch:
+  workflow_dispatch:  # 수동 실행 가능
 
 jobs:
   check_announcements:
@@ -11,31 +11,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
-          persist-credentials: false  # GitHub 기본 인증 제거
-
-      - name: Configure Git
-        run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
-
-      - name: Authenticate with Personal Access Token (MY_PAT)
-        run: |
-          git remote set-url origin https://Minhoooong:${{ secrets.MY_PAT }}@github.com/${{ github.repository }}.git
-
-      - name: Pull latest changes (Check if announcements_seen.json is being reset)
-        run: |
-          git pull origin main || echo "No changes to pull"
-          if [ -f "announcements_seen.json" ]; then
-            echo "DEBUG: announcements_seen.json exists before execution."
-            cat announcements_seen.json
-          else
-            echo "DEBUG: announcements_seen.json DOES NOT EXIST before execution."
-          fi
+          persist-credentials: false  # 깃허브 인증 정보 유지 안 함
+          fetch-depth: 0  # 전체 커밋 내역을 가져옴
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
           python-version: '3.8'
 
@@ -47,15 +29,15 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          MY_PAT: ${{ secrets.MY_PAT }}
-        run: |
-          echo "DEBUG: Running script..."
-          python script.py
-          echo "DEBUG: announcements_seen.json AFTER execution:"
-          cat announcements_seen.json || echo "ERROR: announcements_seen.json was deleted!"
+          MY_PAT: ${{ secrets.MY_PAT }}  # GitHub Personal Access Token
+        run: python script.py
 
-      - name: Commit and push updates to announcements_seen.json
+      - name: Commit and Push Changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.MY_PAT }}
         run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "github-actions"
           git add announcements_seen.json
-          git commit -m "Update announcements_seen.json" || echo "No changes to commit"
-          git push origin main
+          git commit -m "Update announcements_seen.json"
+          git push https://x-access-token:${{ secrets.MY_PAT }}@github.com/Minhoooong/PKNU_Notice_Bot.git main || echo "No changes to commit"
