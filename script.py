@@ -251,7 +251,7 @@ async def run_bot():
     try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
         polling_task = asyncio.create_task(dp.start_polling(bot))  # 폴링을 별도 태스크로 실행
-        await asyncio.sleep(60)  # 10분 대기
+        await asyncio.sleep(600)  # 10분 대기
         logging.info("🛑 Stopping bot polling after 10 minutes...")
         polling_task.cancel()  # 폴링 태스크 취소
         await dp.stop_polling()  # Dispatcher 종료
