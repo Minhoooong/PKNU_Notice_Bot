@@ -52,7 +52,7 @@ def commit_state_changes():
     if token:
         subprocess.run([
             "git", "remote", "set-url", "origin",
-            f"https://x-access-token:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
+            f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         ], check=True)
     
     subprocess.run(["git", "add", "announcements_seen.json"], check=True)
