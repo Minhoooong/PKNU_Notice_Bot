@@ -40,20 +40,18 @@ def save_seen_announcements(seen):
         json.dump(list(seen), f, ensure_ascii=False)
 
 def commit_state_changes():
-    """
-    상태 파일의 변경사항을 Git에 커밋하고 푸시합니다.
-    개인 액세스 토큰(MY_PAT)을 사용하여 원격 URL을 재설정합니다.
-    """
     subprocess.run(["git", "config", "--global", "user.email", "you@example.com"], check=True)
-    subprocess.run(["git", "config", "--global", "user.name", "YourGitHubUsername"], check=True)
+    subprocess.run(["git", "config", "--global", "user.name", "Minhoooong"], check=True)
     
-    # MY_PAT 환경 변수를 사용하여 원격 URL 재설정
     token = os.environ.get("MY_PAT")
     if token:
         subprocess.run([
             "git", "remote", "set-url", "origin",
             f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         ], check=True)
+    
+    # 디버그: 원격 URL 출력
+    subprocess.run(["git", "remote", "-v"], check=True)
     
     subprocess.run(["git", "add", "announcements_seen.json"], check=True)
     subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=False)
