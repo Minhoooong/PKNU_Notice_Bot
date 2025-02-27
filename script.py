@@ -3,6 +3,7 @@ import asyncio
 import requests
 from bs4 import BeautifulSoup
 from aiogram import Bot
+from aiogram.client.bot import DefaultBotProperties
 import json
 import os
 import subprocess
@@ -13,8 +14,8 @@ BASE_URL = 'https://www.pknu.ac.kr'
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 
-# 봇 초기화 (HTML 포맷 사용)
-bot = Bot(token=TOKEN, parse_mode="HTML")
+# 봇 초기화: parse_mode를 DefaultBotProperties를 사용하여 설정
+bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 logging.basicConfig(level=logging.INFO)
 
 def load_seen_announcements():
@@ -55,7 +56,7 @@ def commit_state_changes():
             f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         ], check=True)
     
-    # 원격 URL 출력 (디버그용; 토큰은 마스킹됩니다)
+    # 디버그: 원격 URL 출력 (토큰은 마스킹됨)
     subprocess.run(["git", "remote", "-v"], check=True)
     
     subprocess.run(["git", "add", "announcements_seen.json"], check=True)
@@ -65,14 +66,6 @@ def commit_state_changes():
 def get_school_notices():
     """
     학교 공지사항 페이지에서 각 공지사항의 제목, 링크, 작성자(부서), 날짜를 크롤링합니다.
-    HTML 예시:
-      <tr>
-         <td class="bdlTitle">
-            <a href="?action=view&amp;no=719050">2025 우아한 사장님 자녀 장학금 지원 안내</a>
-         </td>
-         <td class="bdlUser">학생복지과</td>
-         <td class="bdlDate">2025-02-27</td>
-      </tr>
     각 공지사항은 (title, href, department, date) 튜플로 저장됩니다.
     """
     response = requests.get(URL)
@@ -111,7 +104,7 @@ async def send_notification(notices):
         header = f"[부경대 {department} 공지사항 업데이트]"
         message_text = f"{header}\n\n<b>{title}</b>\n\n{date}\n<a href=\"{href}\">자세히 보기</a>"
         await bot.send_message(chat_id=CHAT_ID, text=message_text)
-        # 원한다면 각 메시지 사이에 딜레이를 줄 수 있습니다.
+        # 메시지 사이에 딜레이를 주려면 아래를 활성화하세요.
         # await asyncio.sleep(1)
 
 async def main():
