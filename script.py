@@ -5,8 +5,7 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
-from aiogram.filters import Command
-from aiogram.filters.text import Text
+from aiogram.filters import Command, Text
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
@@ -107,7 +106,7 @@ async def send_notification(notice):
     ])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-# /start 명령어 핸들러: 버튼 2개 표시 ("날짜 입력", "전체 공지사항")
+# /start 명령어 핸들러: 버튼 2개 ("날짜 입력", "전체 공지사항")
 @dp.message(Command(commands=["start"]))
 async def start_command(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -149,7 +148,7 @@ async def process_date_input(message: types.Message, state: FSMContext):
         logging.info(f"Converted full date: {full_date_str}")
         filter_date = parse_date(full_date_str)
         if not filter_date:
-            await message.reply("날짜 형식 변환에 실패했습니다. 올바른 MM/DD 형식으로 입력해 주세요.")
+            await message.reply("날짜 변환에 실패했습니다. 올바른 MM/DD 형식으로 입력해 주세요.")
             return
         
         all_notices = load_seen_announcements() + get_school_notices()
