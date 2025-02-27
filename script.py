@@ -55,4 +55,68 @@ def commit_state_changes():
         if token:
             subprocess.run([
                 "git", "remote", "set-url", "origin",
-                f"https://Minhoooong:{token
+                f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
+            ], check=True)
+        
+        subprocess.run(["git", "add", "announcements_seen.json"], check=True)
+        subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=True)
+        subprocess.run(["git", "push"], check=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Git operation failed: {e}")
+
+# 날짜 파싱 함수
+def parse_date(date_str):
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError as ve:
+        logging.error(f"Date parsing error for {date_str}: {ve}")
+        return None
+
+# 공지사항 크롤링
+def get_school_notices():
+    try:
+        response = requests.get(URL, timeout=10)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        notices = []
+        for tr in soup.find_all("tr"):
+            title_td = tr.find("td", class_="bdlTitle")
+            user_td = tr.find("td", class_="bdlUser")
+            date_td = tr.find("td", class_="bdlDate")
+            if title_td and title_td.find("a") and user_td and date_td:
+                a_tag = title_td.find("a")
+                title = a_tag.get_text(strip=True)
+                href = a_tag.get("href")
+                if href and href.startswith("?"):
+                    href = BASE_URL + href
+                elif href and not href.startswith("http"):
+                    href = BASE_URL + "/" + href
+                department = user_td.get_text(strip=True)
+                date = date_td.get_text(strip=True)
+                notices.append((title, href, department, date))
+        return notices
+    except Exception as e:
+        logging.exception("Error in get_school_notices")
+        return []
+
+# 알림 전송
+async def send_notification(notice):
+    title, href, department, date = notice
+    message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
+    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
+    await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
+
+@dp.message(Command("start"))
+async def start_command(message: types.Message):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="날짜 입력", callback_data="filter_date")],
+        [InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
+    ])
+    await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
+
+async def main():
+    dp.include_router(dp)  # Dispatcher에 라우터 추가
+    await dp.start_polling(bot)
+
+if __name__ == '__main__':
+    asyncio.run(main())
