@@ -34,7 +34,7 @@ CHAT_ID = os.environ.get('CHAT_ID')
 
 # 봇 및 Dispatcher 초기화
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher()
+dp = Dispatcher(bot=bot)
 
 # FSM 상태 정의
 class FilterState(StatesGroup):
@@ -163,13 +163,6 @@ async def send_notification(notice):
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
-
-async def main():
-    logging.info("Starting bot polling...")
-    await dp.start_polling(bot)
-
-if __name__ == '__main__':
-    asyncio.run(main())
 
 # 메시지 ID 저장을 위한 전역 변수
 
