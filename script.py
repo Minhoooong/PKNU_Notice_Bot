@@ -19,15 +19,11 @@ CHAT_ID = os.environ.get('CHAT_ID')
 
 # 봇 초기화 (HTML 포맷 메시지 사용)
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher(bot)
+dp = Dispatcher()  # aiogram v3에서는 인자 없이 생성
+
 logging.basicConfig(level=logging.INFO)
 
 def load_seen_announcements():
-    """
-    상태 파일(announcements_seen.json)에서 이전에 받은 공지사항 목록을 읽어옵니다.
-    파일이 없거나 내용이 비어있으면 빈 리스트를 반환합니다.
-    각 공지사항은 (title, href, department, date) 튜플로 저장됩니다.
-    """
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
             try:
@@ -39,17 +35,10 @@ def load_seen_announcements():
         return []
 
 def save_seen_announcements(seen):
-    """
-    전달받은 공지사항 리스트를 상태 파일(announcements_seen.json)에 저장합니다.
-    """
     with open("announcements_seen.json", "w", encoding="utf-8") as f:
         json.dump(seen, f, ensure_ascii=False)
 
 def commit_state_changes():
-    """
-    상태 파일의 변경사항을 Git에 커밋하고 푸시합니다.
-    개인 액세스 토큰(MY_PAT)을 사용하여 원격 URL을 재설정합니다.
-    """
     subprocess.run(["git", "config", "--global", "user.email", "you@example.com"], check=True)
     subprocess.run(["git", "config", "--global", "user.name", "Minhoooong"], check=True)
     
@@ -60,27 +49,18 @@ def commit_state_changes():
             f"https://Minhoooong:{token}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         ], check=True)
     
-    # 원격 URL 확인 (디버그용)
     subprocess.run(["git", "remote", "-v"], check=True)
-    
     subprocess.run(["git", "add", "announcements_seen.json"], check=True)
     subprocess.run(["git", "commit", "-m", "Update seen announcements"], check=False)
     subprocess.run(["git", "push"], check=True)
 
 def parse_date(date_str):
-    """
-    "YYYY-MM-DD" 형식의 문자열을 datetime 객체로 변환합니다.
-    """
     try:
         return datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError:
         return None
 
 def get_school_notices():
-    """
-    학교 공지사항 페이지에서 각 공지사항의 제목, 링크, 작성자(부서), 날짜를 크롤링합니다.
-    각 공지사항은 (title, href, department, date) 튜플로 저장됩니다.
-    """
     response = requests.get(URL)
     soup = BeautifulSoup(response.text, 'html.parser')
     notices = []
@@ -186,7 +166,7 @@ async def start_command(message: types.Message):
 async def main():
     # 스케줄링 작업을 별도 태스크로 실행한 후, 봇 명령어 처리를 위해 폴링 시작
     asyncio.create_task(scheduled_updates())
-    await dp.start_polling()
+    await dp.start_polling(bot)  # start_polling 호출 시 bot 인스턴스를 전달
 
 if __name__ == '__main__':
     asyncio.run(main())
