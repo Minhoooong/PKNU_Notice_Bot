@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from aiogram.filters import Command
-from aiogram.filters.text import Text
+from aiogram.filters import Text
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
