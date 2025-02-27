@@ -24,9 +24,15 @@ jobs:
         run: |
           git remote set-url origin https://Minhoooong:${{ secrets.MY_PAT }}@github.com/${{ github.repository }}.git
 
-      - name: Pull latest changes
+      - name: Pull latest changes (Check if announcements_seen.json is being reset)
         run: |
           git pull origin main || echo "No changes to pull"
+          if [ -f "announcements_seen.json" ]; then
+            echo "DEBUG: announcements_seen.json exists before execution."
+            cat announcements_seen.json
+          else
+            echo "DEBUG: announcements_seen.json DOES NOT EXIST before execution."
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -42,7 +48,11 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           MY_PAT: ${{ secrets.MY_PAT }}
-        run: python script.py
+        run: |
+          echo "DEBUG: Running script..."
+          python script.py
+          echo "DEBUG: announcements_seen.json AFTER execution:"
+          cat announcements_seen.json || echo "ERROR: announcements_seen.json was deleted!"
 
       - name: Commit and push updates to announcements_seen.json
         run: |
