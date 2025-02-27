@@ -58,12 +58,10 @@ def commit_state_changes():
     subprocess.run(["git", "push"], check=True)
 
 def get_school_notices():
-    """
-    학교 공지사항 페이지를 스크래핑하여 공지 제목과 링크를 튜플 집합으로 반환합니다.
-    """
     response = requests.get(URL)
     soup = BeautifulSoup(response.text, 'html.parser')
-    notice_container = soup.find(attrs={'class': 'b-title-box b-notice'})
+    # "bdlTitle" 클래스를 가진 div 요소를 찾음
+    notice_container = soup.find("div", class_="bdlTitle")
     notices = set()
     if notice_container and notice_container.a:
         title = notice_container.a.get('title')
