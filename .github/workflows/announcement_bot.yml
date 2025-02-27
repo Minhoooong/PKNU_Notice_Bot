@@ -12,6 +12,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull latest changes
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git pull origin main || echo "No changes to pull"
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -39,10 +47,8 @@ jobs:
 
       - name: Commit and push updates to announcements_seen.json
         run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "GitHub Actions"
           git add announcements_seen.json
           git commit -m "Update announcements_seen.json" || echo "No changes to commit"
-          git push
+          git push origin main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
