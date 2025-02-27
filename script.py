@@ -115,7 +115,6 @@ async def start_command(message: types.Message):
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
 async def main():
-    dp.include_router(dp)  # Dispatcher에 라우터 추가
     await dp.start_polling(bot)
 
 if __name__ == '__main__':
