@@ -245,12 +245,17 @@ async def process_date_input(message: types.Message, state: FSMContext):
     await state.clear()
 
 async def run_bot():
-     try:
+    """
+    10분(600초) 동안만 봇을 실행한 후 자동 종료하는 함수.
+    """
+    try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
         await asyncio.gather(
             dp.start_polling(bot),  # 봇 실행
             asyncio.sleep(600)  # 10분 후 종료
         )
+    except Exception as e:
+        logging.error(f"❌ Bot error: {e}")
     finally:
         logging.info("🛑 Stopping bot polling after 10 minutes.")
         await bot.session.close()  # 봇 세션 닫기
