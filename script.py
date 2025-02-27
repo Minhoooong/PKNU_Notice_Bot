@@ -6,7 +6,8 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from aiogram.filters import Command
-from aiogram.filters import Text
+from aiogram.filters import Command
+from aiogram import F 
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
@@ -117,7 +118,7 @@ async def start_command(message: types.Message):
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
 # Callback Query 핸들러
-@dp.callback_query(Text("filter_date"))
+@dp.callback_query(F.data == "filter_date")
 async def callback_filter_date(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
     await state.set_state(FilterState.waiting_for_date.state)
