@@ -2,12 +2,10 @@ import logging
 import asyncio
 import requests
 from bs4 import BeautifulSoup
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from aiogram.filters import Command
-from aiogram.filters import Command
-from aiogram import F 
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
@@ -117,14 +115,13 @@ async def start_command(message: types.Message):
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
-# Callback Query 핸들러
 @dp.callback_query(F.data == "filter_date")
 async def callback_filter_date(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 02/27):")
     await state.set_state(FilterState.waiting_for_date.state)
     await callback.answer()
 
-@dp.callback_query(Text("all_notices"))
+@dp.callback_query(F.data == "all_notices")
 async def callback_all_notices(callback: types.CallbackQuery):
     notices = get_school_notices()
     if not notices:
@@ -133,31 +130,6 @@ async def callback_all_notices(callback: types.CallbackQuery):
         for notice in notices:
             await send_notification(notice)
     await callback.answer()
-
-# 날짜 입력 처리
-@dp.message(Text())
-async def process_date_input(message: types.Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state != str(FilterState.waiting_for_date):
-        return
-    
-    try:
-        input_text = message.text.strip()
-        full_date_str = f"2025-{input_text.replace('/', '-')}"
-        filter_date = parse_date(full_date_str)
-        
-        notices = [n for n in get_school_notices() if parse_date(n[3]) == filter_date]
-        if not notices:
-            await message.answer(f"{input_text} 날짜의 공지사항이 없습니다.")
-        else:
-            for notice in notices:
-                await send_notification(notice)
-            await message.answer(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
-    except Exception:
-        logging.exception("Error processing date input")
-        await message.answer("날짜 처리 중 오류 발생")
-    finally:
-        await state.clear()
 
 async def main():
     await dp.start_polling(bot)
