@@ -1,6 +1,8 @@
 import logging
 import asyncio
 import requests
+import sys
+import aiohttp
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.bot import DefaultBotProperties
@@ -53,8 +55,17 @@ else:
         f.write(credentials_path)
 
 # 기존 코드 실행
-with open("announcements_seen.json", "w") as f:
-    f.write(os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
+credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+if credentials_path:
+    try:
+        with open(credentials_path, "r", encoding="utf-8") as f:
+            credentials_data = f.read()
+        with open("announcements_seen.json", "w", encoding="utf-8") as f:
+            f.write(credentials_data)
+    except Exception as e:
+        logging.error(f"❌ Failed to read credentials file: {e}")
+else:
+    logging.error("❌ GOOGLE_APPLICATION_CREDENTIALS 환경 변수가 설정되지 않았습니다.")
 
 # FSM 상태 정의
 class FilterState(StatesGroup):
@@ -88,13 +99,17 @@ def save_seen_announcements(seen):
         logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
 
 # 공지사항 크롤링 (URL 처리 개선)
-def get_school_notices(category=""):
+async def fetch_url(url):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=10) as response:
+            return await response.text()
+
+async def get_school_notices(category=""):
     try:
         category_url = f"{URL}?cd={category}" if category else URL
-        response = requests.get(category_url, timeout=10)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
+        html_content = await fetch_url(category_url)  # ✅ 비동기 요청
+        soup = BeautifulSoup(html_content, 'html.parser')
+
         notices = []
         for tr in soup.find_all("tr"):
             title_td = tr.find("td", class_="bdlTitle")
@@ -106,7 +121,6 @@ def get_school_notices(category=""):
                 title = a_tag.get_text(strip=True)
                 href = a_tag.get("href")
 
-                # URL 정규화 (절대 URL로 변환)
                 if href.startswith("/"):
                     href = BASE_URL + href
                 elif href.startswith("?"):
@@ -117,56 +131,63 @@ def get_school_notices(category=""):
                 department = user_td.get_text(strip=True)
                 date = date_td.get_text(strip=True)
                 notices.append((title, href, department, date))
-        
+
         notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
         return notices
-    except requests.RequestException as e:
-        logging.error(f"Error fetching notices: {e}")
-        return []
     except Exception as e:
-        logging.exception("Error in get_school_notices")
+        logging.exception("❌ Error in get_school_notices")
         return []
 
 # URL내 이미지 추출
-def extract_content(url):
-    response = requests.get(url)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    
-    # Extract text
-    paragraphs = soup.find_all('p')
-    text = ' '.join([para.get_text() for para in paragraphs])
-    
-    # Extract images
-    images = soup.find_all('img')
-    image_urls = [img['src'] for img in images if 'src' in img.attrs]
-    
-    return text, image_urls
+async def extract_content(url):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as response:
+                html_content = await response.text()
+
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Extract text
+        paragraphs = soup.find_all('p')
+        text = ' '.join([para.get_text() for para in paragraphs])
+
+        # Extract images
+        images = soup.find_all('img')
+        image_urls = [img['src'] for img in images if 'src' in img.attrs]
+
+        return text, image_urls
+    except Exception as e:
+        logging.error(f"❌ Failed to fetch content from {url}: {e}")
+        return "", []
 
 # 이미지 분석 처리
-def analyze_image(image_url):
+async def analyze_image(image_url):
     if not image_url.startswith(('http://', 'https://')):
         image_url = 'https://' + image_url.lstrip('/')
+
     logging.info(f"Analyzing image URL: {image_url}")
+
     try:
-        image_response = requests.get(image_url)
-        image_response.raise_for_status()
-    except requests.RequestException as e:
-        logging.error(f"Failed to fetch image: {e}")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url, timeout=10) as response:
+                image_content = await response.read()  # ✅ 비동기적으로 이미지 다운로드
+
+        image = vision.Image(content=image_content)
+
+        # Text detection
+        response = client.text_detection(image=image)
+        texts = response.text_annotations
+        text_analysis = [text.description for text in texts]
+
+        # Label detection
+        response = client.label_detection(image=image)
+        labels = response.label_annotations
+        label_analysis = [label.description for label in labels]
+
+        return text_analysis, label_analysis
+    except Exception as e:
+        logging.error(f"❌ Failed to fetch image: {e}")
         return [], []
-
-    image = vision.Image(content=image_response.content)
-
-    # Text detection
-    response = client.text_detection(image=image)
-    texts = response.text_annotations
-    text_analysis = [text.description for text in texts]
-
-    # Label detection
-    response = client.label_detection(image=image)
-    labels = response.label_annotations
-    label_analysis = [label.description for label in labels]
-
-    return text_analysis, label_analysis
   
 # 새로운 공지사항 확인 및 알림 전송
 async def check_for_new_notices():
@@ -175,7 +196,7 @@ async def check_for_new_notices():
     seen_announcements = load_seen_announcements()
     logging.info(f"Loaded seen announcements: {seen_announcements}")
 
-    current_notices = get_school_notices()
+    current_notices = await get_school_notices()  # ✅ 비동기 함수 호출
     logging.info(f"Fetched current notices: {current_notices}")
 
     seen_titles_urls = {(title, url) for title, url, *_ in seen_announcements}
@@ -202,10 +223,15 @@ def push_changes():
         if not pat:
             logging.error("❌ GitHub PAT가 설정되지 않았습니다. Push를 생략합니다.")
             return
+        
+        os.environ["GIT_ASKPASS"] = "echo"
+        os.environ["GIT_PASSWORD"] = pat
 
+        subprocess.run(["git", "config", "--global", "credential.helper", "store"], check=True)
         subprocess.run(["git", "add", "announcements_seen.json"], check=True)
         subprocess.run(["git", "commit", "-m", "Update announcements_seen.json"], check=True)
-        subprocess.run(["git", "push", f"https://x-access-token:{pat}@github.com/Minhoooong/PKNU_Notice_Bot.git"], check=True)
+        subprocess.run(["git", "push", "origin", "main"], check=True)
+
         logging.info("✅ Successfully pushed changes to GitHub.")
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
@@ -288,7 +314,7 @@ async def process_date_input(message: types.Message, state: FSMContext):
     logging.info(f"Current FSM state raw: {current_state}")
 
     # 상태 비교 수정
-    if current_state != "FilterState:waiting_for_date":
+    if current_state != FilterState.waiting_for_date.state:
         logging.warning("Received date input, but state is incorrect.")
         return
 
@@ -336,4 +362,10 @@ async def run_bot():
         logging.info("✅ Bot session closed.")
 
 if __name__ == '__main__':
-    asyncio.run(run_bot())
+    if sys.platform.startswith("win"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    
+    try:
+        asyncio.run(run_bot())
+    except RuntimeError:
+        logging.error("❌ asyncio 이벤트 루프 실행 중 오류 발생.")
