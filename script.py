@@ -144,7 +144,14 @@ def extract_content(url):
 def analyze_image(image_url):
     if not image_url.startswith(('http://', 'https://')):
         image_url = 'https://' + image_url.lstrip('/')
-    image_response = requests.get(image_url)
+    logging.info(f"Analyzing image URL: {image_url}")
+    try:
+        image_response = requests.get(image_url)
+        image_response.raise_for_status()
+    except requests.RequestException as e:
+        logging.error(f"Failed to fetch image: {e}")
+        return [], []
+
     image = vision.Image(content=image_response.content)
 
     # Text detection
