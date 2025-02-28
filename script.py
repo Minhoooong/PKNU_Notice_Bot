@@ -16,11 +16,7 @@ import subprocess
 import html
 from datetime import datetime
 import urllib.parse
-
-# 한국어 문장 분할을 위한 kss 라이브러리
 import kss
-
-# "EbanLee/kobart-summary-v3" 모델 사용
 from transformers import PreTrainedTokenizerFast, BartForConditionalGeneration
 
 MODEL_NAME = "EbanLee/kobart-summary-v3"
@@ -154,32 +150,39 @@ def summarize_paragraphs(text):
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
+    """
+    주어진 URL에서 텍스트와 이미지를 크롤링한 후, 요약하여 반환
+    """
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=10) as response:
                 html_content = await response.text()
+
         soup = BeautifulSoup(html_content, 'html.parser')
-        # 특정 영역 내의 콘텐츠 추출
-        container = soup.find("div", class_="bdvTxt_wrap")
+        container = soup.find("div", class_="bdvTxt_wrap")  # 공지사항 본문
+        
         if not container:
-            container = soup
-        # 텍스트 추출: 해당 영역의 <p> 태그에서 텍스트만 가져옴
+            logging.error("❌ bdvTxt_wrap 요소를 찾을 수 없음")
+            return "", []
+
+        # --- 텍스트 추출 ---
         paragraphs = container.find_all('p')
-        raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
-        # 추출한 텍스트를 요약
-        summary_text = summarize_text(raw_text)
-        # 이미지 추출: /upload/ 경로가 포함된 URL만 선택
+        raw_text = "\n".join([para.get_text(separator=" ", strip=True) for para in paragraphs])
+        
+        # --- 요약 적용 ---
+        summary_text = summarize_paragraphs(raw_text)  # ✅ 변경된 함수 호출
+
+        # --- 이미지 추출 (/upload/ 만 포함) ---
         images = container.find_all('img')
         image_urls = []
         for img in images:
             src = img.get('src')
-            if src:
-                if not src.startswith(('http://', 'https://')):
+            if src and "/upload/" in src:
+                if not src.startswith(("http://", "https://")):
                     src = urllib.parse.urljoin(url, src)
-                if "/upload/" not in src:
-                    continue
                 if await is_valid_url(src):
                     image_urls.append(src)
+
         return summary_text, image_urls
     except Exception as e:
         logging.error(f"❌ Failed to fetch content from {url}: {e}")
