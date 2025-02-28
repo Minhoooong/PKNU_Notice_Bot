@@ -124,57 +124,20 @@ def summarize_text(text):
     try:
         if len(text.split()) < 50:
             return text
-        # 문장 분할
-        sentences = kss.split_sentences(text)
-        chunks = []
-        current_chunk = ""
-        for sentence in sentences:
-            new_chunk = current_chunk + " " + sentence if current_chunk else sentence
-            tokens = tokenizer.encode(new_chunk, truncation=False)
-            if len(tokens) > 1024:
-                if current_chunk.strip():
-                    chunks.append(current_chunk.strip())
-                current_chunk = sentence
-            else:
-                current_chunk = new_chunk
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
-        logging.info(f"생성된 청크 개수: {len(chunks)}")
-        # 각 청크별 요약 수행
-        chunk_summaries = []
-        for chunk in chunks:
-            inputs = tokenizer(chunk, return_tensors="pt", padding="max_length", truncation=True, max_length=1026)
-            summary_ids = model.generate(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
-                bos_token_id=model.config.bos_token_id,
-                eos_token_id=model.config.eos_token_id,
-                length_penalty=1.0,
-                max_length=70,
-                min_length=30,
-                num_beams=6,
-                repetition_penalty=1.5,
-                no_repeat_ngram_size=15,
-            )
-            summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-            chunk_summaries.append(summary_text if summary_text else chunk)
-        # 재요약: 청크 요약 결과들을 줄바꿈으로 연결 후 재요약 처리
-        combined_summary_text = "\n".join(chunk_summaries).strip()
-        inputs = tokenizer(combined_summary_text, return_tensors="pt", padding="max_length", truncation=True, max_length=1026)
-        final_summary_ids = model.generate(
+
+        # 문장 분할 없이 전체 텍스트를 사용하여 요약 수행
+        inputs = tokenizer(text, return_tensors="pt", truncation=True)
+        summary_ids = model.generate(
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
             bos_token_id=model.config.bos_token_id,
             eos_token_id=model.config.eos_token_id,
-            length_penalty=1.0,
-            max_length=70,
-            min_length=30,
             num_beams=6,
             repetition_penalty=1.5,
             no_repeat_ngram_size=15,
         )
-        final_summary = tokenizer.decode(final_summary_ids[0], skip_special_tokens=True)
-        return final_summary if final_summary else combined_summary_text
+        summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+        return summary_text
     except Exception as e:
         logging.error(f"Summarization error: {e}")
         return text
