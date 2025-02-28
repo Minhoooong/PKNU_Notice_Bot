@@ -1,9 +1,7 @@
 import logging
-import sklearn
 import asyncio
 import sys
 import aiohttp
-from konlpy.tag import Mecab
 from bs4 import BeautifulSoup
 from collections import OrderedDict
 from aiogram import Bot, Dispatcher, types, F
