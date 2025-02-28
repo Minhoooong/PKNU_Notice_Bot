@@ -23,6 +23,8 @@ logging.basicConfig(level=logging.INFO,
                         logging.FileHandler("logfile.log"),
                         logging.StreamHandler()
                     ])
+# Initialize the Vision API client
+client = vision.ImageAnnotatorClient()
 
 # 상수 정의
 URL = 'https://www.pknu.ac.kr/main/163'
