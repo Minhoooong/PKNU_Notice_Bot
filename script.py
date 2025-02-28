@@ -22,9 +22,13 @@ import urllib.parse
 import kss
 
 # 한국어 요약을 위해 transformers의 pipeline과 tokenizer 불러오기
-from transformers import pipeline, AutoTokenizer
-tokenizer = AutoTokenizer.from_pretrained("gogamza/kobart-summarization")
-summarizer = pipeline("summarization", model="gogamza/kobart-summarization")
+from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+
+# SKT/Korean-T5 모델 (또는 파인튜닝된 모델) 사용
+MODEL_NAME = "SKT/Korean-T5-base"  # 필요시 파인튜닝 모델 이름으로 변경
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
+summarizer = pipeline("summarization", model=model, tokenizer=tokenizer)
 
 # 로깅 설정
 logging.basicConfig(
@@ -147,31 +151,25 @@ async def get_school_notices(category=""):
 
 # --- 푸터 제거: 불필요한 정보 필터링 ---
 def filter_footer(text):
-    # 고정된 불필요한 하단 정보
     footer = ("대연캠퍼스(48513) 부산광역시 남구 용소로 45 TEL : 051-629-4114 FAX : 051-629-4114 " 
               "FAX : 051-629-5119 용당캠퍼스(48547) 부산광역시 남구 신선로 365 TEL : 051-629-4114 "
               "FAX : 051-629-6040 COPYRIGHT(C) 2021 PUKYONG NATIONAL UNIVERSITY. ALL RIGHTS RESERVED.")
-    # footer가 text에 있으면 제거
     return text.replace(footer, "").strip()
 
-# --- 텍스트 요약: 문장 단위 청크로 분할 후 요약 ---
+# --- 텍스트 요약: SKT/Korean-T5 모델을 사용하여 문장 단위 청크로 분할 후 요약 ---
 def summarize_text(text):
     try:
         if len(text.split()) < 50:
             return text
         
-        # 푸터 등 불필요한 부분 제거
         text = filter_footer(text)
-        
-        # kss로 문장 분할 (한국어 문장 단위 분할)
-        sentences = kss.split(text)
+        sentences = kss.split_sentences(text)
         
         chunks = []
         current_chunk = ""
         for sentence in sentences:
-            # 문장 추가 후 현재 청크를 토큰화하여 길이 확인
             new_chunk = current_chunk + " " + sentence if current_chunk else sentence
-            tokens = tokenizer.encode(new_chunk)
+            tokens = tokenizer.encode(new_chunk, truncation=False)
             if len(tokens) > 1024:
                 if current_chunk.strip():
                     chunks.append(current_chunk.strip())
@@ -181,17 +179,26 @@ def summarize_text(text):
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
         
-        summaries = []
-        for chunk in chunks:
-            summary = summarizer(chunk, max_length=130, min_length=30, do_sample=False)
-            summaries.append(summary[0]['summary_text'])
-        combined_summary = " ".join(summaries)
+        logging.info(f"생성된 청크 개수: {len(chunks)}")
         
-        # 최종 요약: 결합한 요약이 너무 길면 한 번 더 요약
-        final_tokens = tokenizer.encode(combined_summary)
+        summaries = []
+        # 요약 파라미터는 도메인 특성에 맞게 조정 (예: max_length=70, min_length=30)
+        for chunk in chunks:
+            result = summarizer(chunk, max_length=70, min_length=30, do_sample=False)
+            summary_text = result[0].get('summary_text', '').strip()
+            if not summary_text:
+                summary_text = chunk
+            summaries.append(summary_text)
+        combined_summary = " ".join(summaries).strip()
+        
+        if not combined_summary:
+            return text
+        
+        final_tokens = tokenizer.encode(combined_summary, truncation=False)
         if len(final_tokens) > 1024:
-            final_summary = summarizer(combined_summary, max_length=130, min_length=30, do_sample=False)
-            return final_summary[0]['summary_text']
+            final_result = summarizer(combined_summary, max_length=70, min_length=30, do_sample=False)
+            final_summary = final_result[0].get('summary_text', '').strip()
+            return final_summary if final_summary else combined_summary
         else:
             return combined_summary
     except Exception as e:
@@ -209,7 +216,6 @@ async def extract_content(url):
         raw_text = ' '.join([para.get_text() for para in paragraphs])
         summary_text = summarize_text(raw_text)
 
-        # 이미지 추출 (필요 시 활용)
         images = soup.find_all('img')
         image_urls = []
         for img in images:
@@ -224,7 +230,6 @@ async def extract_content(url):
         logging.error(f"❌ Failed to fetch content from {url}: {e}")
         return "", []
 
-# --- 이미지 URL 유효성 검사 ---
 async def is_valid_url(url):
     try:
         async with aiohttp.ClientSession() as session:
@@ -234,7 +239,6 @@ async def is_valid_url(url):
         logging.error(f"❌ Invalid image URL: {url}, error: {e}")
     return False
 
-# --- 새로운 공지사항 확인 및 알림 전송 ---
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
     seen_announcements = load_seen_announcements()
@@ -256,7 +260,6 @@ async def check_for_new_notices():
     else:
         logging.info("✅ 새로운 공지사항이 없습니다.")
 
-# --- GitHub Push (PAT 예외 처리) ---
 def push_changes():
     try:
         pat = os.environ.get("MY_PAT")
@@ -273,7 +276,6 @@ def push_changes():
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
 
-# --- 수동 공지사항 확인 명령어 ---
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message):
     new_notices = await check_for_new_notices()
@@ -282,7 +284,6 @@ async def manual_check_notices(message: types.Message):
     else:
         await message.answer("✅ 새로운 공지사항이 없습니다.")
 
-# --- 알림 전송 ---
 async def send_notification(notice):
     title, href, department, date = notice
     summary_text, image_urls = await extract_content(href)
@@ -292,7 +293,6 @@ async def send_notification(notice):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-# --- /start 명령어 처리 ---
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -301,14 +301,12 @@ async def start_command(message: types.Message):
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
-# --- 날짜 입력 요청 처리 ---
 @dp.callback_query(F.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
     await callback.answer()
 
-# --- 전체 공지사항 버튼 클릭 시 카테고리 선택 ---
 @dp.callback_query(F.data == "all_notices")
 async def callback_all_notices(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -319,7 +317,6 @@ async def callback_all_notices(callback: CallbackQuery, state: FSMContext):
     await state.set_state(FilterState.selecting_category)
     await callback.answer()
 
-# --- 카테고리 선택 시 해당 공지사항 가져오기 ---
 @dp.callback_query(F.data.startswith("category_"))
 async def callback_category_selection(callback: CallbackQuery, state: FSMContext):
     category_code = callback.data.split("_")[1]
@@ -332,7 +329,6 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
     await state.clear()
     await callback.answer()
 
-# --- 날짜 입력 처리 ---
 @dp.message(F.text)
 async def process_date_input(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
@@ -360,7 +356,6 @@ async def process_date_input(message: types.Message, state: FSMContext):
     logging.info("Clearing FSM state.")
     await state.clear()
 
-# --- 봇 실행 (10분 동안 폴링 후 종료) ---
 async def run_bot():
     try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
