@@ -2,6 +2,7 @@ import logging
 import asyncio
 import sys
 import aiohttp
+import re
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.bot import DefaultBotProperties
@@ -100,6 +101,34 @@ async def get_school_notices(category=""):
         logging.exception("❌ Error in get_school_notices")
         return []
 
+def clean_summary_text(text):
+    """
+    요약된 문장을 더 깔끔하게 정리하는 후처리 함수
+    1. 중복 단어 및 불필요한 반복 제거
+    2. 문법적으로 올바르게 수정
+    3. 가독성을 높이기 위한 개행 추가
+    """
+    if not text.strip():
+        return text  # 내용이 없으면 그대로 반환
+
+    # 1. 중복 단어 및 반복된 표현 정리
+    text = re.sub(r'\b(\w+)( \1)+\b', r'\1', text)  # 예: "확인 확인 확인" → "확인"
+    text = re.sub(r'(\S+)\s+\1', r'\1', text)  # 예: "체크 체크" → "체크"
+
+    # 2. 불완전한 문장 감지 및 수정
+    sentences = kss.split_sentences(text)
+    cleaned_sentences = []
+    for sentence in sentences:
+        if not sentence.endswith(('.', '!', '?', '"', "'")):
+            sentence += "."  # 문장 끝이 이상하면 마침표 추가
+        cleaned_sentences.append(sentence)
+
+    # 3. 가독성을 높이기 위한 정리
+    formatted_text = "\n".join(cleaned_sentences)
+    formatted_text = re.sub(r"\s+", " ", formatted_text).strip()  # 불필요한 공백 제거
+
+    return formatted_text
+
 def extract_key_sentences(text, top_n=5):
     """
     중요 문장을 추출하는 함수.
@@ -121,13 +150,18 @@ def extract_key_sentences(text, top_n=5):
 
 def summarize_paragraphs(text):
     """
-    문단 단위로 요약 후 최종 요약을 수행하는 함수
+    1. 문장을 정리하여 가독성을 높이고
+    2. 문단 단위로 요약한 후
+    3. 최종 요약을 수행한 뒤 깔끔하게 정리
     """
+    # 텍스트 가독성 개선
+    text = clean_and_format_text(text)
+    
     # 공백 및 빈 문단 제거
     paragraphs = [para.strip() for para in text.split("\n") if para.strip()]
     
     # 요약할 내용이 없으면 원본 반환
-    if not paragraphs or len(paragraphs) == 0:
+    if not paragraphs:
         logging.warning("❌ 요약할 내용이 없음, 원본 반환")
         return text  
 
@@ -171,7 +205,9 @@ def summarize_paragraphs(text):
         repetition_penalty=1.5,
         no_repeat_ngram_size=15,
     )
-    return tokenizer.decode(final_summary_ids[0], skip_special_tokens=True)
+    
+    # 최종 요약 후 정리 적용
+    return clean_summary_text(tokenizer.decode(final_summary_ids[0], skip_special_tokens=True))
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
