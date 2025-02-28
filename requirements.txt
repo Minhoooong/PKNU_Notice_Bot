@@ -4,6 +4,3 @@ transformers
 torch
 kss
 aiohttp
-scikit-learn
-konlpy
-eunjeon
