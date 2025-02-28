@@ -23,6 +23,8 @@ jobs:
 
     - name: Set up Google Cloud credentials
       run: echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > path_to_temp_credentials.json
+      env:
+        GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
 
     - name: Run announcement bot script
       env:
