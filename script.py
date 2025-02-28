@@ -165,7 +165,7 @@ def analyze_image(image_url):
     label_analysis = [label.description for label in labels]
 
     return text_analysis, label_analysis
-
+  
 # 새로운 공지사항 확인 및 알림 전송
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
@@ -230,8 +230,9 @@ async def send_notification(notice):
     
     # Analyze images and append to summary
     for image_url in image_urls:
-        labels = analyze_image(image_url)
-        message_text += f"\n\n이미지 분석 결과: {', '.join(labels)}"
+        text_analysis, label_analysis = analyze_image(image_url)
+        if label_analysis:
+            message_text += f"\n\n이미지 분석 결과: {', '.join(label_analysis)}"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
