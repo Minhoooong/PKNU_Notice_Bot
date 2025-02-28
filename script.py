@@ -120,14 +120,42 @@ async def get_school_notices(category=""):
         return []
 
 # --- 텍스트 요약 (재요약 단계 포함) ---
-def summarize_text(text):
+def summarize_by_paragraph(text):
     try:
-        if len(text.split()) < 50:
-            return text
-
-        # 문장 분할 없이 전체 텍스트를 사용하여 요약 수행
-        inputs = tokenizer(text, return_tensors="pt", truncation=True)
-        summary_ids = model.generate(
+        # 문단 단위로 분리 (빈 줄 기준)
+        paragraphs = [para.strip() for para in text.split("\n\n") if para.strip()]
+        para_summaries = []
+        for para in paragraphs:
+            inputs = tokenizer(
+                para,
+                return_tensors="pt",
+                padding="max_length",
+                truncation=True,
+                max_length=1026
+            )
+            summary_ids = model.generate(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                bos_token_id=model.config.bos_token_id,
+                eos_token_id=model.config.eos_token_id,
+                num_beams=6,
+                repetition_penalty=1.5,
+                no_repeat_ngram_size=15,
+            )
+            summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+            para_summaries.append(summary_text)
+        # 각 문단 요약 결과를 줄바꿈으로 연결
+        combined_summary = "\n".join(para_summaries).strip()
+        
+        # 재요약: 연결된 요약문을 다시 모델에 입력하여 최종 요약문 생성
+        inputs = tokenizer(
+            combined_summary,
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+            max_length=1026
+        )
+        final_summary_ids = model.generate(
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
             bos_token_id=model.config.bos_token_id,
@@ -136,10 +164,10 @@ def summarize_text(text):
             repetition_penalty=1.5,
             no_repeat_ngram_size=15,
         )
-        summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-        return summary_text
+        final_summary = tokenizer.decode(final_summary_ids[0], skip_special_tokens=True)
+        return final_summary if final_summary else combined_summary
     except Exception as e:
-        logging.error(f"Summarization error: {e}")
+        logging.error(f"Paragraph summarization error: {e}")
         return text
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 --- 
