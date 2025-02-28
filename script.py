@@ -63,6 +63,17 @@ class FilterState(StatesGroup):
 
 CACHE_FILE = "announcements_seen.json"
 
+def truncate_text(text, max_length=3000):
+    """
+    본문이 너무 길 경우 앞부분과 뒷부분을 유지하고 중간을 생략하여 압축.
+    """
+    if len(text) <= max_length:
+        return text  # 길이가 적당하면 그대로 반환
+
+    half = max_length // 2
+    return text[:half] + " ... (중략) ... " + text[-half:]  # 앞/뒤 유지, 중간 생략
+
+
 def load_cache():
     """ 캐시 파일에서 기존 공지사항 로드 """
     if os.path.exists(CACHE_FILE):
@@ -152,34 +163,40 @@ async def get_school_notices(category=""):
 
 # --- TextRank 기반 중요 문장 추출 ---
 def text_rank_key_sentences(text, top_n=5):
+    text = truncate_text(text, max_length=3000)  # ✅ 긴 텍스트를 잘라서 요약
+    
     sentences = kss.split_sentences(text, backend="auto")
-    if len(sentences) <= top_n:
-        return sentences  # 문장이 적으면 그대로 반환
-
-    vectorizer = TfidfVectorizer()
-    sentence_vectors = vectorizer.fit_transform(sentences).toarray()
-
-    # ✅ 유사도 행렬에서 예외 처리 추가
-    if sentence_vectors.shape[0] < 2:
+    
+    if len(sentences) < 2:  
         logging.warning("⚠️ 문장 개수가 너무 적어 TextRank 실행 불가.")
-        return sentences  # 문장이 1개 이하라면 그대로 반환
+        return sentences  # ✅ 문장이 1개 이하이면 그대로 반환
+
+    vectorizer = TfidfVectorizer(max_features=500)  # ✅ 단어 개수 증가 (300 → 500)
+    try:
+        sentence_vectors = vectorizer.fit_transform(sentences[:top_n*2]).toarray()
+    except ValueError as e:
+        logging.error(f"❌ TF-IDF 변환 오류: {e}")
+        return sentences[:top_n]  # ✅ 예외 발생 시 일부 문장 반환
+
+    if sentence_vectors.shape[0] < 2:  
+        logging.warning("⚠️ 문장이 부족하여 TextRank 실행 불가.")
+        return sentences  # ✅ 원본 문장을 그대로 반환
 
     similarity_matrix = cosine_similarity(sentence_vectors, sentence_vectors)
     nx_graph = nx.from_numpy_array(similarity_matrix)
-    
+
     try:
         scores = nx.pagerank(nx_graph)
     except Exception as e:
         logging.error(f"❌ PageRank 오류: {e}")
-        return sentences  # 예외 발생 시 원본 문장 반환
+        return sentences[:top_n]  # ✅ 오류 발생 시 일부 문장 반환
 
-    # ✅ scores에 존재하는 키만 필터링하여 처리
     ranked_sentences = sorted(
         ((scores.get(i, 0), s) for i, s in enumerate(sentences) if i in scores), 
         reverse=True
     )
-    
-    return [s for _, s in ranked_sentences[:top_n]]
+
+    return [s for _, s in ranked_sentences[:top_n]] if ranked_sentences else sentences[:top_n]
 
 def clean_and_format_text(text):
     """
