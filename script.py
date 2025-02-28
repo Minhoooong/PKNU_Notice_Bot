@@ -19,14 +19,13 @@ import urllib.parse
 # 한국어 문장 분할을 위한 kss 라이브러리
 import kss
 
-# 한국어 요약을 위해 transformers의 pipeline과 tokenizer 불러오기
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+# 한국어 요약을 위해 transformers의 PreTrainedTokenizerFast와 BartForConditionalGeneration 불러오기
+from transformers import PreTrainedTokenizerFast, BartForConditionalGeneration
 
-# SKT/Korean-T5 모델 (파인튜닝된 모델이 있다면 해당 모델 이름으로 변경)
-MODEL_NAME = "skt/korean-t5-base"  # 수정: 소문자 사용
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
-summarizer = pipeline("summarization", model=model, tokenizer=tokenizer)
+# "EbanLee/kobart-summary-v3" 모델 사용
+MODEL_NAME = "EbanLee/kobart-summary-v3"
+tokenizer = PreTrainedTokenizerFast.from_pretrained(MODEL_NAME)
+model = BartForConditionalGeneration.from_pretrained(MODEL_NAME)
 
 # 로깅 설정
 logging.basicConfig(
@@ -132,7 +131,7 @@ def filter_footer(text):
               "FAX : 051-629-6040 COPYRIGHT(C) 2021 PUKYONG NATIONAL UNIVERSITY. ALL RIGHTS RESERVED.")
     return text.replace(footer, "").strip()
 
-# --- 텍스트 요약: SKT/Korean-T5 모델을 사용하여 문장 단위 청크로 분할 후 요약 ---
+# --- 텍스트 요약: "EbanLee/kobart-summary-v3" 모델을 사용하여 문장 단위 청크로 분할 후 요약 ---
 def summarize_text(text):
     try:
         if len(text.split()) < 50:
@@ -159,11 +158,21 @@ def summarize_text(text):
         
         summaries = []
         for chunk in chunks:
-            result = summarizer(chunk, max_length=70, min_length=30, do_sample=False)
-            summary_text = result[0].get('summary_text', '').strip()
-            if not summary_text:
-                summary_text = chunk
-            summaries.append(summary_text)
+            inputs = tokenizer(chunk, return_tensors="pt", padding="max_length", truncation=True, max_length=1026)
+            summary_ids = model.generate(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                bos_token_id=model.config.bos_token_id,
+                eos_token_id=model.config.eos_token_id,
+                length_penalty=1.0,
+                max_length=70,
+                min_length=30,
+                num_beams=6,
+                repetition_penalty=1.5,
+                no_repeat_ngram_size=15,
+            )
+            summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+            summaries.append(summary_text if summary_text else chunk)
         combined_summary = " ".join(summaries).strip()
         
         if not combined_summary:
@@ -171,8 +180,20 @@ def summarize_text(text):
         
         final_tokens = tokenizer.encode(combined_summary, truncation=False)
         if len(final_tokens) > 1024:
-            final_result = summarizer(combined_summary, max_length=70, min_length=30, do_sample=False)
-            final_summary = final_result[0].get('summary_text', '').strip()
+            inputs = tokenizer(combined_summary, return_tensors="pt", padding="max_length", truncation=True, max_length=1026)
+            final_result = model.generate(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                bos_token_id=model.config.bos_token_id,
+                eos_token_id=model.config.eos_token_id,
+                length_penalty=1.0,
+                max_length=70,
+                min_length=30,
+                num_beams=6,
+                repetition_penalty=1.5,
+                no_repeat_ngram_size=15,
+            )
+            final_summary = tokenizer.decode(final_result[0], skip_special_tokens=True)
             return final_summary if final_summary else combined_summary
         else:
             return combined_summary
