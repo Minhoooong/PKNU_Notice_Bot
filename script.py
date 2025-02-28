@@ -9,6 +9,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+from collections import Counter
 import json
 import os
 import subprocess
@@ -103,59 +104,53 @@ async def get_school_notices(category=""):
         logging.exception("❌ Error in get_school_notices")
         return []
 
-# --- 텍스트 요약 (문단/청크 단위 요약 후 재요약) ---
-def summarize_text(text):
-    try:
-        if len(text.split()) < 50:
-            return text
-        # 문장 분할 후 청크로 나누기
-        sentences = kss.split_sentences(text)
-        chunks = []
-        current_chunk = ""
-        for sentence in sentences:
-            new_chunk = current_chunk + " " + sentence if current_chunk else sentence
-            tokens = tokenizer.encode(new_chunk, truncation=False)
-            if len(tokens) > 1024:
-                if current_chunk.strip():
-                    chunks.append(current_chunk.strip())
-                current_chunk = sentence
-            else:
-                current_chunk = new_chunk
-        if current_chunk.strip():
-            chunks.append(current_chunk.strip())
-        logging.info(f"생성된 청크 개수: {len(chunks)}")
-        # 각 청크별 요약 수행
-        chunk_summaries = []
-        for chunk in chunks:
-            inputs = tokenizer(chunk, return_tensors="pt", padding="max_length", truncation=True, max_length=1026)
-            summary_ids = model.generate(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
-                bos_token_id=model.config.bos_token_id,
-                eos_token_id=model.config.eos_token_id,
-                num_beams=6,
-                repetition_penalty=1.5,
-                no_repeat_ngram_size=15,
-            )
-            summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-            chunk_summaries.append(summary_text if summary_text else chunk)
-        # 재요약: 청크 요약 결과를 줄바꿈으로 연결 후 재요약
-        combined_summary_text = "\n".join(chunk_summaries).strip()
-        inputs = tokenizer(combined_summary_text, return_tensors="pt", padding="max_length", truncation=True, max_length=1026)
-        final_summary_ids = model.generate(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            bos_token_id=model.config.bos_token_id,
-            eos_token_id=model.config.eos_token_id,
-            num_beams=6,
-            repetition_penalty=1.5,
-            no_repeat_ngram_size=15,
-        )
-        final_summary = tokenizer.decode(final_summary_ids[0], skip_special_tokens=True)
-        return final_summary if final_summary else combined_summary_text
-    except Exception as e:
-        logging.error(f"Summarization error: {e}")
-        return text
+def extract_key_sentences(text, top_n=5):
+    """
+    중요 문장을 추출하는 함수.
+    TextRank 알고리즘을 적용하여 상위 N개의 문장을 선택.
+    """
+    sentences = kss.split_sentences(text)
+    
+    # 단어 빈도 기반으로 중요 단어를 선별
+    word_count = Counter(" ".join(sentences).split())
+    important_words = [word for word, count in word_count.most_common(20)]  # 상위 20개 단어 선택
+    
+    # 중요 단어가 포함된 문장만 필터링
+    key_sentences = []
+    for sentence in sentences:
+        if any(word in sentence for word in important_words):
+            key_sentences.append(sentence)
+
+    return key_sentences[:top_n]  # 상위 N개 문장 선택
+
+def summarize_paragraphs(text):
+    """
+    문단 단위로 요약하는 대신, 중요 문장을 먼저 추출한 후 요약.
+    """
+    paragraphs = text.split("\n")  # 문단 분리
+    cleaned_paragraphs = [" ".join(kss.split_sentences(para)) for para in paragraphs if para.strip()]
+    
+    # 문단별 중요 문장 추출
+    key_sentences = []
+    for para in cleaned_paragraphs:
+        key_sentences.extend(extract_key_sentences(para, top_n=3))
+
+    # 요약 모델 적용
+    full_text = " ".join(key_sentences)
+    inputs = tokenizer(full_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+    
+    summary_ids = model.generate(
+        input_ids=inputs["input_ids"],
+        attention_mask=inputs["attention_mask"],
+        num_beams=6,
+        length_penalty=1.0,
+        max_length=100,  # 적절한 요약 길이 조절
+        min_length=30,
+        repetition_penalty=1.5,
+        no_repeat_ngram_size=15,
+    )
+    
+    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
