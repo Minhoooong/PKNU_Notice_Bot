@@ -37,6 +37,14 @@ CHAT_ID = os.environ.get('CHAT_ID')
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(bot=bot)
 
+#Google Cloud Vision API 설정
+credentials_path = 'path_to_temp_credentials.json'
+with open(credentials_path, 'w') as f:
+    f.write(os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
+
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+client = vision.ImageAnnotatorClient()
+
 # FSM 상태 정의
 class FilterState(StatesGroup):
     waiting_for_date = State()
@@ -126,14 +134,20 @@ def extract_content(url):
 
 # 이미지 분석 처리
 def analyze_image(image_url):
-    client = vision.ImageAnnotatorClient()
-    response = requests.get(image_url)
-    image = vision.Image(content=response.content)
+    image_response = requests.get(image_url)
+    image = vision.Image(content=image_response.content)
 
+    # Text detection
+    response = client.text_detection(image=image)
+    texts = response.text_annotations
+    text_analysis = [text.description for text in texts]
+
+    # Label detection
     response = client.label_detection(image=image)
     labels = response.label_annotations
+    label_analysis = [label.description for label in labels]
 
-    return [label.description for label in labels]
+    return text_analysis, label_analysis
 
 # 새로운 공지사항 확인 및 알림 전송
 async def check_for_new_notices():
