@@ -18,6 +18,10 @@ import html
 from datetime import datetime
 import urllib.parse
 
+# Transformers summarization pipeline
+from transformers import pipeline
+summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+
 # 로깅 설정 (최초에 설정)
 logging.basicConfig(
     level=logging.INFO, 
@@ -137,7 +141,18 @@ async def get_school_notices(category=""):
         logging.exception("❌ Error in get_school_notices")
         return []
 
-# --- URL 내 이미지 및 텍스트 추출 --- #
+# --- 웹페이지 텍스트 추출 및 요약 --- #
+def summarize_text(text):
+    try:
+        # 텍스트가 너무 짧으면 요약하지 않고 원문 반환
+        if len(text.split()) < 50:
+            return text
+        summary = summarizer(text, max_length=130, min_length=30, do_sample=False)
+        return summary[0]['summary_text']
+    except Exception as e:
+        logging.error(f"Summarization error: {e}")
+        return text
+
 async def extract_content(url):
     try:
         async with aiohttp.ClientSession() as session:
@@ -146,8 +161,10 @@ async def extract_content(url):
 
         soup = BeautifulSoup(html_content, 'html.parser')
         paragraphs = soup.find_all('p')
-        text = ' '.join([para.get_text() for para in paragraphs])
+        raw_text = ' '.join([para.get_text() for para in paragraphs])
+        summary_text = summarize_text(raw_text)
 
+        # 이미지 추출 (필요하다면 사용)
         images = soup.find_all('img')
         image_urls = []
         for img in images:
@@ -157,8 +174,7 @@ async def extract_content(url):
                     src = urllib.parse.urljoin(url, src)
                 if await is_valid_url(src):
                     image_urls.append(src)
-
-        return text, image_urls
+        return summary_text, image_urls
     except Exception as e:
         logging.error(f"❌ Failed to fetch content from {url}: {e}")
         return "", []
@@ -172,40 +188,6 @@ async def is_valid_url(url):
     except Exception as e:
         logging.error(f"❌ Invalid image URL: {url}, error: {e}")
     return False
-
-# --- 이미지 분석 처리 (요청 헤더 추가 및 상태 코드 체크) --- #
-async def analyze_image(image_url):
-    if not image_url.startswith(('http://', 'https://')):
-        image_url = 'https://' + image_url.lstrip('/')
-
-    logging.info(f"Analyzing image URL: {image_url}")
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36"
-    }
-    try:
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(image_url, timeout=10) as response:
-                if response.status != 200:
-                    logging.error(f"❌ Failed to fetch image: {image_url}, HTTP status: {response.status}")
-                    return [], []
-                image_content = await response.read()
-
-        image = vision.Image(content=image_content)
-
-        # Text detection
-        response_text = client.text_detection(image=image)
-        texts = response_text.text_annotations
-        text_analysis = [text.description for text in texts]
-
-        # Label detection
-        response_label = client.label_detection(image=image)
-        labels = response_label.label_annotations
-        label_analysis = [label.description for label in labels]
-
-        return text_analysis, label_analysis
-    except Exception as e:
-        logging.error(f"❌ Failed to analyze image: {e}")
-        return [], []
 
 # --- 새로운 공지사항 확인 및 알림 전송 --- #
 async def check_for_new_notices():
@@ -262,19 +244,16 @@ async def manual_check_notices(message: types.Message):
     else:
         await message.answer("✅ 새로운 공지사항이 없습니다.")
 
-# --- 알림 전송 --- #
+# --- 알림 전송 (이미지 분석 부분 제거) --- #
 async def send_notification(notice):
     title, href, department, date = notice
-    text, image_urls = await extract_content(href)
+    summary_text, image_urls = await extract_content(href)
     
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
-    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n{html.escape(text)}"
+    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
+    message_text += f"{html.escape(summary_text)}"
     
-    for image_url in image_urls:
-        text_analysis, label_analysis = await analyze_image(image_url)
-        if label_analysis:
-            message_text += f"\n\n이미지 분석 결과: {', '.join(map(html.escape, label_analysis))}"
-    
+    # (원한다면 image_urls를 추가로 활용 가능)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
