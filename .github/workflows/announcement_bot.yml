@@ -21,21 +21,9 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
 
-    - name: Debug Google Cloud Secrets
-      run: |
-        if [ -z "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}" ]; then
-          echo "❌ GOOGLE_APPLICATION_CREDENTIALS_CONTENT is empty!"
-          exit 1
-        else
-          echo "✅ GOOGLE_APPLICATION_CREDENTIALS_CONTENT is set."
-        fi
-
     - name: Setup Google Cloud Credentials
-      env:
-        GOOGLE_APPLICATION_CREDENTIALS_CONTENT: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
       run: |
-        echo "$GOOGLE_APPLICATION_CREDENTIALS_CONTENT" | base64 --decode > /tmp/gcloud.json
-        ls -lah /tmp/gcloud.json
+        echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > /tmp/gcloud.json
         echo "✅ Google Cloud Credentials saved successfully."
 
     - name: Verify Google Cloud Credentials File
@@ -56,7 +44,6 @@ jobs:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         CHAT_ID: ${{ secrets.CHAT_ID }}
         MY_PAT: ${{ secrets.MY_PAT }}
-        GOOGLE_APPLICATION_CREDENTIALS_CONTENT: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
       run: python script.py
 
     - name: Clean up credentials
