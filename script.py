@@ -67,7 +67,8 @@ def save_seen_announcements(seen):
     except Exception as e:
         logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
 
-# 공지사항 크롤링
+
+# 공지사항 크롤링 (URL 처리 개선)
 def get_school_notices(category=""):
     try:
         category_url = f"{URL}?cd={category}" if category else URL
@@ -80,14 +81,20 @@ def get_school_notices(category=""):
             title_td = tr.find("td", class_="bdlTitle")
             user_td = tr.find("td", class_="bdlUser")
             date_td = tr.find("td", class_="bdlDate")
+
             if title_td and title_td.find("a") and user_td and date_td:
                 a_tag = title_td.find("a")
                 title = a_tag.get_text(strip=True)
                 href = a_tag.get("href")
-                if href and href.startswith("?"):
+
+                # URL 정규화 (절대 URL로 변환)
+                if href.startswith("/"):
                     href = BASE_URL + href
-                elif href and not href.startswith("http"):
+                elif href.startswith("?"):
+                    href = BASE_URL + "/main/163" + href
+                elif not href.startswith("http"):
                     href = BASE_URL + "/" + href
+
                 department = user_td.get_text(strip=True)
                 date = date_td.get_text(strip=True)
                 notices.append((title, href, department, date))
@@ -110,16 +117,12 @@ async def check_for_new_notices():
 
     current_notices = get_school_notices()
     logging.info(f"Fetched current notices: {current_notices}")
-    
-    def normalize_url(url):
-        parsed = urllib.parse.urlparse(url)
-        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}"
-    
-    seen_titles_urls = {(title, normalize_url(url)) for title, url, *_ in seen_announcements}
+
+    seen_titles_urls = {(title, url) for title, url, *_ in seen_announcements}
 
     new_notices = [
         (title, href, department, date) for title, href, department, date in current_notices
-        if (title, normalize_url(href)) not in seen_titles_urls
+        if (title, href) not in seen_titles_urls
     ]
     logging.info(f"DEBUG: New notices detected: {new_notices}")
 
