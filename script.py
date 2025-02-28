@@ -38,7 +38,12 @@ bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(bot=bot)
 
 # 환경 변수 설정
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/path/to/your/service-account-file.json"
+credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+if credentials_path is None:
+    logging.error("GOOGLE_APPLICATION_CREDENTIALS 환경 변수가 설정되지 않았습니다.")
+else:
+    with open("announcements_seen.json", "w") as f:
+        f.write(credentials_path)
 
 # 기존 코드 실행
 with open("announcements_seen.json", "w") as f:
