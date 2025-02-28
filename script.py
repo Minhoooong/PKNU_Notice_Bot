@@ -184,28 +184,31 @@ def extract_key_sentences(text, top_n=5):
 
 # --- 텍스트 요약 ---
 def summarize_text(text):
-    key_sentences = text_rank_key_sentences(text, top_n=7)
-    combined_text = " ".join(key_sentences)
+    try:
+        key_sentences = text_rank_key_sentences(text, top_n=7)
+        combined_text = " ".join(key_sentences)
 
-    inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
-    summary_ids = model.generate(  # ✅ Now properly indented
-        input_ids=inputs["input_ids"],
-        attention_mask=inputs["attention_mask"],
-        num_beams=6,
-        length_penalty=1.0,
-        max_length=100,
-        min_length=30,
-        repetition_penalty=1.5,
-        no_repeat_ngram_size=15,
-    )
-    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-    
+        # 입력 길이 초과 방지 (1024 토큰 제한 대비)
+        if len(combined_text.split()) > 900:
+            combined_text = " ".join(combined_text.split()[:900])
+
+        inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+        summary_ids = model.generate(
+            input_ids=inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
+            num_beams=6,
+            length_penalty=1.0,
+            max_length=100,
+            min_length=30,
+            repetition_penalty=1.5,
+            no_repeat_ngram_size=15,
+        )
+        return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+
     except Exception as e:
-        logging.error(f"❌ KoBART 요약 오류: {e}")
-        return "요약을 생성하는 데 실패했습니다."
-
-
-    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+        error_message = f"❌ KoBART 요약 오류: {str(e)}"
+        logging.error(error_message)
+        return error_message  # 예외 메시지를 직접 반환
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
