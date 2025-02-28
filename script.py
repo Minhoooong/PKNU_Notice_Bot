@@ -96,15 +96,16 @@ def parse_date(date_str):
 session = aiohttp.ClientSession()  # ✅ 전역 세션 생성
 
 async def fetch_url(url):
-    try:
-        async with session.get(url, timeout=10) as response:
-            if response.status != 200:
-                logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
-                return None
-            return await response.text()
-    except Exception as e:
-        logging.error(f"❌ URL 요청 오류: {url}, {e}")
-        return None
+    async with aiohttp.ClientSession() as session:  # 함수 내에서 세션 생성
+        try:
+            async with session.get(url, timeout=10) as response:
+                if response.status != 200:
+                    logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
+                    return None
+                return await response.text()
+        except Exception as e:
+            logging.error(f"❌ URL 요청 오류: {url}, {e}")
+            return None
 
 # --- 공지사항 크롤링 ---
 async def get_school_notices(category=""):
