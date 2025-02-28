@@ -184,16 +184,11 @@ def extract_key_sentences(text, top_n=5):
 
 # --- 텍스트 요약 ---
 def summarize_text(text):
-    """
-    1. TextRank로 중요 문장 추출
-    2. KoBART 모델로 요약
-    """
     key_sentences = text_rank_key_sentences(text, top_n=7)
     combined_text = " ".join(key_sentences)
 
     inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
-    try:
-    summary_ids = model.generate(
+    summary_ids = model.generate(  # ✅ Now properly indented
         input_ids=inputs["input_ids"],
         attention_mask=inputs["attention_mask"],
         num_beams=6,
@@ -203,6 +198,8 @@ def summarize_text(text):
         repetition_penalty=1.5,
         no_repeat_ngram_size=15,
     )
+    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    
     except Exception as e:
         logging.error(f"❌ KoBART 요약 오류: {e}")
         return "요약을 생성하는 데 실패했습니다."
