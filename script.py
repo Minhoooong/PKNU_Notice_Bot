@@ -37,13 +37,12 @@ CHAT_ID = os.environ.get('CHAT_ID')
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(bot=bot)
 
-#Google Cloud Vision API 설정
-credentials_path = 'path_to_temp_credentials.json'
-with open(credentials_path, 'w') as f:
-    f.write(os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
+# 환경 변수 설정
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/path/to/your/service-account-file.json"
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
-client = vision.ImageAnnotatorClient()
+# 기존 코드 실행
+with open("announcements_seen.json", "w") as f:
+    f.write(os.environ["GOOGLE_APPLICATION_CREDENTIALS"])
 
 # FSM 상태 정의
 class FilterState(StatesGroup):
