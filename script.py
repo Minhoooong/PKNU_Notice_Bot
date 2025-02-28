@@ -138,6 +138,9 @@ def extract_content(url):
 
 # 이미지 분석 처리
 def analyze_image(image_url):
+    if not image_url.startswith(('http://', 'https://')):
+        image_url = 'https://' + image_url
+    image_response = requests.get(image_url)
     image_response = requests.get(image_url)
     image = vision.Image(content=image_response.content)
 
