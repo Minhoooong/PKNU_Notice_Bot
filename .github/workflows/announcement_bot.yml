@@ -28,6 +28,9 @@ jobs:
           git config --global user.email "github-actions@github.com"
           git remote set-url origin https://x-access-token:${{ secrets.MY_PAT }}@github.com/Minhoooong/PKNU_Notice_Bot.git
 
+      - name: Set up Google Cloud credentials
+        run: echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > path_to_temp_credentials.json
+
       - name: Run announcement bot script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
