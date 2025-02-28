@@ -18,8 +18,9 @@ import html
 from datetime import datetime
 import urllib.parse
 
-# Transformers summarization pipeline
-from transformers import pipeline
+# Transformers summarization pipeline 및 tokenizer 불러오기
+from transformers import pipeline, AutoTokenizer
+tokenizer = AutoTokenizer.from_pretrained("sshleifer/distilbart-cnn-12-6")
 summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
 # 로깅 설정 (최초에 설정)
@@ -144,10 +145,15 @@ async def get_school_notices(category=""):
 # --- 웹페이지 텍스트 추출 및 요약 --- #
 def summarize_text(text):
     try:
-        # 텍스트가 너무 짧으면 요약하지 않고 원문 반환
+        # 텍스트가 너무 짧으면 요약하지 않고 원본 반환
         if len(text.split()) < 50:
             return text
-        summary = summarizer(text, max_length=130, min_length=30, do_sample=False)
+        
+        # 토크나이저를 사용하여 최대 1024 토큰으로 자르기
+        tokens = tokenizer.encode(text, truncation=True, max_length=1024)
+        truncated_text = tokenizer.decode(tokens, skip_special_tokens=True)
+        
+        summary = summarizer(truncated_text, max_length=130, min_length=30, do_sample=False)
         return summary[0]['summary_text']
     except Exception as e:
         logging.error(f"Summarization error: {e}")
@@ -244,7 +250,7 @@ async def manual_check_notices(message: types.Message):
     else:
         await message.answer("✅ 새로운 공지사항이 없습니다.")
 
-# --- 알림 전송 (이미지 분석 부분 제거) --- #
+# --- 알림 전송 --- #
 async def send_notification(notice):
     title, href, department, date = notice
     summary_text, image_urls = await extract_content(href)
@@ -253,7 +259,6 @@ async def send_notification(notice):
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
     message_text += f"{html.escape(summary_text)}"
     
-    # (원한다면 image_urls를 추가로 활용 가능)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
