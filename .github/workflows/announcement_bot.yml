@@ -39,7 +39,9 @@ jobs:
       - name: Set environment variables for Google Cloud Credentials
         run: |
           echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud.json" >> $GITHUB_ENV
-          echo "GOOGLE_APPLICATION_CREDENTIALS_CONTENT=${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" >> $GITHUB_ENV
+          echo "GOOGLE_APPLICATION_CREDENTIALS_CONTENT<<EOF" >> $GITHUB_ENV
+          cat /tmp/gcloud.json >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       - name: Run announcement bot script
         env:
