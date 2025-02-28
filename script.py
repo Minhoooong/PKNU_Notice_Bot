@@ -3,7 +3,9 @@ import sklearn
 import asyncio
 import sys
 import aiohttp
+from konlpy.tag import Mecab
 from bs4 import BeautifulSoup
+from collections import OrderedDict
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, CallbackQuery
@@ -116,7 +118,7 @@ def text_rank_key_sentences(text, top_n=5):
     """
     TextRank 알고리즘을 활용하여 중요 문장 선별
     """
-    sentences = kss.split_sentences(text)
+    sentences = kss.split_sentences(text, backend="mecab")
     if len(sentences) <= top_n:
         return sentences  # 문장이 적으면 그대로 반환
 
@@ -152,7 +154,7 @@ def clean_and_format_text(text):
     text = " ".join(cleaned_words)
 
     # 2️⃣ 문장 마침표 보정
-    sentences = kss.split_sentences(text)  # 문장 분리
+    sentences = kss.split_sentences(text, backend="mecab")  # 문장 분리
     cleaned_sentences = []
     for sentence in sentences:
         if not sentence.endswith(('.', '!', '?', '"', "'")):
@@ -169,7 +171,7 @@ def extract_key_sentences(text, top_n=5):
     중요 문장을 추출하는 함수.
     TextRank 알고리즘을 적용하여 상위 N개의 문장을 선택.
     """
-    sentences = kss.split_sentences(text)
+    sentences = kss.split_sentences(text, backend="mecab")
     
     # 단어 빈도 기반으로 중요 단어를 선별
     word_count = Counter(" ".join(sentences).split())
