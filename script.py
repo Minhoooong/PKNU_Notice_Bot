@@ -1,6 +1,5 @@
 import logging
 import asyncio
-import requests
 import sys
 import aiohttp
 from bs4 import BeautifulSoup
@@ -18,58 +17,41 @@ import html
 from datetime import datetime
 import urllib.parse
 import tempfile
-import base64
 
-
-# 환경 변수에서 JSON 파일 내용 가져오기
-credentials_content = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_CONTENT")
-
-if not credentials_content:
-    logging.error("❌ GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수가 설정되지 않았습니다.")
-    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수가 설정되지 않았습니다.")
-
-try:
-    # Base64로 인코딩된 JSON 파일을 디코딩
-    decoded_credentials = base64.b64decode(credentials_content).decode("utf-8")
-
-    # 임시 파일로 저장
-    with tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8") as temp_file:
-        temp_file.write(decoded_credentials)
-        temp_credentials_path = temp_file.name
-
-    logging.info("✅ GOOGLE_APPLICATION_CREDENTIALS JSON 파일이 정상적으로 로드되었습니다.")
-except Exception as e:
-    logging.error(f"❌ JSON 파일 디코딩 실패: {e}")
-    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수 디코딩 오류 발생")
-
-# Google Cloud Vision API 클라이언트 초기화
-client = vision.ImageAnnotatorClient()
-logging.info("✅ Google Cloud Vision API 인증 성공!")
-
-# 임시 파일 생성 및 JSON 내용 쓰기
-with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-    temp_file.write(credentials_content.encode('utf-8'))
-    temp_credentials_path = temp_file.name
-
-try:
-    with open(temp_credentials_path, "r", encoding="utf-8") as f:
-        json.load(f)  # JSON 파싱 테스트
-    logging.info("✅ GOOGLE_APPLICATION_CREDENTIALS JSON 파일이 정상적으로 로드되었습니다.")
-except json.JSONDecodeError as e:
-    logging.error(f"❌ JSON 파일 파싱 오류 발생: {e}")
-    raise ValueError(f"JSON 파일 형식이 올바르지 않습니다: {temp_credentials_path}")
-
-# Google Vision API 클라이언트 초기화
-client = vision.ImageAnnotatorClient()
-logging.info("✅ Google Cloud Vision API 인증 성공!")
-
-# 로깅 설정
+# 로깅 설정 (최초에 설정)
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     handlers=[
                         logging.FileHandler("logfile.log"),
                         logging.StreamHandler()
                     ])
+
+# 환경 변수에서 JSON 파일 내용 가져오기 (Base64 인코딩 없이)
+credentials_content = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_CONTENT")
+if not credentials_content:
+    logging.error("❌ GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수가 설정되지 않았습니다.")
+    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수가 설정되지 않았습니다.")
+
+try:
+    # JSON 문자열 그대로 임시 파일로 저장
+    with tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8") as temp_file:
+         temp_file.write(credentials_content)
+         temp_credentials_path = temp_file.name
+
+    # JSON 파싱 테스트
+    with open(temp_credentials_path, "r", encoding="utf-8") as f:
+         json.load(f)
+    logging.info("✅ GOOGLE_APPLICATION_CREDENTIALS JSON 파일이 정상적으로 로드되었습니다.")
+except Exception as e:
+    logging.error(f"❌ JSON 파일 처리 오류: {e}")
+    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수 오류 발생")
+
+# GOOGLE_APPLICATION_CREDENTIALS 환경 변수에 임시 파일 경로 설정
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_credentials_path
+
+# Google Cloud Vision API 클라이언트 초기화
+client = vision.ImageAnnotatorClient()
+logging.info("✅ Google Cloud Vision API 인증 성공!")
 
 # 상수 정의
 URL = 'https://www.pknu.ac.kr/main/163'
@@ -169,11 +151,11 @@ async def extract_content(url):
 
         soup = BeautifulSoup(html_content, 'html.parser')
 
-        # Extract text
+        # 텍스트 추출
         paragraphs = soup.find_all('p')
         text = ' '.join([para.get_text() for para in paragraphs])
 
-        # Extract images and convert to absolute URLs
+        # 이미지 추출 및 절대 URL 변환
         images = soup.find_all('img')
         image_urls = []
         for img in images:
@@ -181,7 +163,7 @@ async def extract_content(url):
             if src:
                 if not src.startswith(('http://', 'https://')):
                     src = urllib.parse.urljoin(url, src)
-                # Check if the image URL is valid
+                # 이미지 URL 유효성 검사
                 if await is_valid_url(src):
                     image_urls.append(src)
 
@@ -293,20 +275,17 @@ async def send_notification(notice):
     # ✅ 'await' 사용하여 실행 결과 가져오기
     text, image_urls = await extract_content(href)
     
-    # Prepare message
+    # 메시지 준비
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
-    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n{html.escape(text)}"  # Ensure text is escaped
+    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n{html.escape(text)}"
     
     for image_url in image_urls:
-        # ✅ 'await' 사용하여 실행 결과 가져오기
         text_analysis, label_analysis = await analyze_image(image_url)
         if label_analysis:
-            message_text += f"\n\n이미지 분석 결과: {', '.join(map(html.escape, label_analysis))}"  # Escape labels
+            message_text += f"\n\n이미지 분석 결과: {', '.join(map(html.escape, label_analysis))}"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
-
-# 메시지 ID 저장을 위한 전역 변수
 
 # /start 명령어 처리
 @dp.message(Command("start"))
@@ -337,16 +316,12 @@ async def callback_all_notices(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("category_"))
 async def callback_category_selection(callback: CallbackQuery, state: FSMContext):
     category_code = callback.data.split("_")[1]
-    
-    # ✅ 'await' 사용하여 실행 결과 가져오기
     notices = await get_school_notices(category_code)
-
     if not notices:
         await callback.message.answer("해당 카테고리의 공지사항이 없습니다.")
     else:
-        for notice in notices[:7]:  # ✅ 리스트에서 항목 가져오기
+        for notice in notices[:7]:
             await send_notification(notice)
-
     await state.clear()
     await callback.answer()
 
@@ -356,7 +331,6 @@ async def process_date_input(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     logging.info(f"Current FSM state raw: {current_state}")
 
-    # 상태 비교 수정
     if current_state != FilterState.waiting_for_date.state:
         logging.warning("Received date input, but state is incorrect.")
         return
@@ -369,13 +343,11 @@ async def process_date_input(message: types.Message, state: FSMContext):
     logging.info(f"Converted full date string: {full_date_str}")
 
     filter_date = parse_date(full_date_str)
-
     if filter_date is None:
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 입력해 주세요.")
         return
 
     notices = [n for n in await get_school_notices() if parse_date(n[3]) == filter_date]
-
     if not notices:
         logging.info(f"No notices found for {full_date_str}")
         await message.answer(f"📢 {input_text}의 공지사항이 없습니다.")
@@ -393,15 +365,15 @@ async def run_bot():
     """
     try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
-        polling_task = asyncio.create_task(dp.start_polling(bot))  # 폴링을 별도 태스크로 실행
-        await asyncio.sleep(600)  # 10분 대기
+        polling_task = asyncio.create_task(dp.start_polling(bot))
+        await asyncio.sleep(600)
         logging.info("🛑 Stopping bot polling after 10 minutes...")
-        polling_task.cancel()  # 폴링 태스크 취소
-        await dp.stop_polling()  # Dispatcher 종료
+        polling_task.cancel()
+        await dp.stop_polling()
     except Exception as e:
         logging.error(f"❌ Bot error: {e}")
     finally:
-        await bot.session.close()  # 봇 세션 닫기
+        await bot.session.close()
         logging.info("✅ Bot session closed.")
 
 # 임시 파일 삭제
@@ -410,7 +382,6 @@ os.remove(temp_credentials_path)
 if __name__ == '__main__':
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
     try:
         asyncio.run(run_bot())
     except RuntimeError as e:
