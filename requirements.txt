@@ -5,3 +5,4 @@ torch
 kss
 aiohttp
 scikit-learn
+konlpy
