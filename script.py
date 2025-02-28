@@ -45,8 +45,6 @@ logging.basicConfig(level=logging.INFO,
                         logging.FileHandler("logfile.log"),
                         logging.StreamHandler()
                     ])
-# Initialize the Vision API client
-client = vision.ImageAnnotatorClient()
 
 # 상수 정의
 URL = 'https://www.pknu.ac.kr/main/163'
@@ -332,7 +330,7 @@ async def process_date_input(message: types.Message, state: FSMContext):
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 입력해 주세요.")
         return
 
-    notices = [n for n in get_school_notices() if parse_date(n[3]) == filter_date]
+    notices = [n for n in await get_school_notices() if parse_date(n[3]) == filter_date]
 
     if not notices:
         logging.info(f"No notices found for {full_date_str}")
@@ -366,10 +364,7 @@ if __name__ == '__main__':
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    loop = asyncio.get_event_loop()
     try:
-        loop.run_until_complete(run_bot())
+        asyncio.run(run_bot())
     except RuntimeError as e:
         logging.error(f"❌ asyncio 이벤트 루프 실행 중 오류 발생: {e}")
-    finally:
-        loop.close()
