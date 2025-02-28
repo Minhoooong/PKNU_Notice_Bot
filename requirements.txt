@@ -4,3 +4,4 @@ requests
 google-cloud-vision
 transformers
 torch
+kss
