@@ -18,12 +18,21 @@ import html
 from datetime import datetime
 import urllib.parse
 
-# 환경 변수 확인
+# 환경 변수에서 JSON 파일 경로 가져오기
 credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
+# JSON 파일 검증
 if not credentials_path or not os.path.exists(credentials_path):
-    logging.error("❌ GOOGLE_APPLICATION_CREDENTIALS 환경 변수가 올바르게 설정되지 않았거나 파일이 없습니다.")
-    raise FileNotFoundError("환경 변수를 설정해야 합니다. GitHub Secrets 확인 필요!")
+    logging.error("❌ GOOGLE_APPLICATION_CREDENTIALS 파일이 존재하지 않습니다.")
+    raise FileNotFoundError(f"환경 변수가 설정되지 않았거나 파일이 없습니다: {credentials_path}")
+
+try:
+    with open(credentials_path, "r", encoding="utf-8") as f:
+        json.load(f)  # JSON 파싱 테스트
+    logging.info("✅ GOOGLE_APPLICATION_CREDENTIALS JSON 파일이 정상적으로 로드되었습니다.")
+except json.JSONDecodeError as e:
+    logging.error(f"❌ JSON 파일 파싱 오류 발생: {e}")
+    raise ValueError(f"JSON 파일 형식이 올바르지 않습니다: {credentials_path}")
 
 # Google Vision API 클라이언트 초기화
 client = vision.ImageAnnotatorClient()
