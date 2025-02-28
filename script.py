@@ -213,11 +213,11 @@ def extract_key_sentences(text, top_n=5):
 # --- 텍스트 요약 ---
 def summarize_text(text):
     if text is None or not text.strip():
-        return ""  # ✅ 기본 값 반환
+        return " "  # ✅ 기본 값 반환
 
     key_sentences = text_rank_key_sentences(text, top_n=7)
     if not key_sentences:
-        return ""  # ✅ 기본 값 반환
+        return " "  # ✅ 기본 값 반환
 
     combined_text = " ".join(key_sentences)
 
@@ -237,7 +237,7 @@ def summarize_text(text):
     
     except Exception as e:
         logging.error(f"❌ KoBART 요약 오류: {e}")
-        return ""  # ✅ 기본 값 반환
+        return " "  # ✅ 기본 값 반환
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
@@ -245,7 +245,7 @@ async def extract_content(url):
         html_content = await fetch_url(url)
         if html_content is None:  # ✅ fetch_url()이 None을 반환하면 빈 문자열 처리
             logging.error(f"❌ Failed to fetch content: {url}")
-            return "", []
+            return " ", []
 
         soup = BeautifulSoup(html_content, 'html.parser')
         container = soup.find("div", class_="bdvTxt_wrap")
@@ -258,14 +258,14 @@ async def extract_content(url):
         summary_text = summarize_text(raw_text)
         if summary_text is None:  # ✅ summary_text가 None이면 빈 문자열 반환
             logging.error(f"❌ Failed to summarize content: {url}")
-            return "", []
+            return " ", []
 
         images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if "/upload/" in img['src']]
         return summary_text, images
 
     except Exception as e:
         logging.error(f"❌ Exception in extract_content: {e}")
-        return "", []
+        return " ", []
 
 async def is_valid_url(url):
     try:
