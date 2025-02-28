@@ -21,11 +21,12 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
 
-   - name: Configure GOOGLE_APPLICATION_CREDENTIALS
+    - name: Configure GOOGLE_APPLICATION_CREDENTIALS
       run: echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > $HOME/gcloud.json
+      
     - name: Set environment variable
       run: export GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcloud.json
-      
+
     - name: Run announcement bot script
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
