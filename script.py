@@ -29,10 +29,8 @@ logging.basicConfig(
 )
 
 # --- Google Cloud 인증 정보 로드 --- #
-# 먼저 GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수가 있는지 확인합니다.
 credentials_content = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_CONTENT")
 if not credentials_content:
-    # 없으면, GOOGLE_APPLICATION_CREDENTIALS 환경 변수에 지정된 파일 경로에서 내용을 읽어옵니다.
     credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if credentials_path and os.path.exists(credentials_path):
         with open(credentials_path, "r", encoding="utf-8") as f:
@@ -170,36 +168,43 @@ async def is_valid_url(url):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.head(url, timeout=10) as response:
-                if response.status == 200:
-                    return True
+                return response.status == 200
     except Exception as e:
         logging.error(f"❌ Invalid image URL: {url}, error: {e}")
     return False
 
-# --- 이미지 분석 처리 --- #
+# --- 이미지 분석 처리 (요청 헤더 추가 및 상태 코드 체크) --- #
 async def analyze_image(image_url):
     if not image_url.startswith(('http://', 'https://')):
         image_url = 'https://' + image_url.lstrip('/')
 
     logging.info(f"Analyzing image URL: {image_url}")
-
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36"
+    }
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(image_url, timeout=10) as response:
+                if response.status != 200:
+                    logging.error(f"❌ Failed to fetch image: {image_url}, HTTP status: {response.status}")
+                    return [], []
                 image_content = await response.read()
 
         image = vision.Image(content=image_content)
+
+        # Text detection
         response_text = client.text_detection(image=image)
         texts = response_text.text_annotations
         text_analysis = [text.description for text in texts]
 
+        # Label detection
         response_label = client.label_detection(image=image)
         labels = response_label.label_annotations
         label_analysis = [label.description for label in labels]
 
         return text_analysis, label_analysis
     except Exception as e:
-        logging.error(f"❌ Failed to fetch image: {e}")
+        logging.error(f"❌ Failed to analyze image: {e}")
         return [], []
 
 # --- 새로운 공지사항 확인 및 알림 전송 --- #
