@@ -88,27 +88,40 @@ async def get_school_notices(category=""):
     try:
         category_url = f"{URL}?cd={category}" if category else URL
         html_content = await fetch_url(category_url)
+
+        # ✅ URL 응답이 None이면 공지사항을 반환하지 않음
+        if html_content is None:
+            logging.error(f"❌ 공지사항 페이지를 불러올 수 없습니다: {category_url}")
+            return []
+
         soup = BeautifulSoup(html_content, 'html.parser')
         notices = []
+
         for tr in soup.find_all("tr"):
             title_td = tr.find("td", class_="bdlTitle")
             user_td = tr.find("td", class_="bdlUser")
             date_td = tr.find("td", class_="bdlDate")
+            
             if title_td and title_td.find("a") and user_td and date_td:
                 a_tag = title_td.find("a")
                 title = a_tag.get_text(strip=True)
                 href = a_tag.get("href")
+
+                # ✅ URL이 상대 경로일 경우 절대 경로로 변환
                 if href.startswith("/"):
                     href = BASE_URL + href
                 elif href.startswith("?"):
                     href = BASE_URL + "/main/163" + href
                 elif not href.startswith("http"):
                     href = BASE_URL + "/" + href
+
                 department = user_td.get_text(strip=True)
                 date = date_td.get_text(strip=True)
                 notices.append((title, href, department, date))
+
         notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
         return notices
+
     except Exception as e:
         logging.exception("❌ Error in get_school_notices")
         return []
