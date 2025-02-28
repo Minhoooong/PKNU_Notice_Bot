@@ -23,7 +23,7 @@ jobs:
 
     - name: Setup Google Cloud Credentials
       run: |
-        echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" | base64 --decode > /tmp/gcloud.json
+        printf "%s" '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > /tmp/gcloud.json
       shell: bash
 
     - name: Verify Google Cloud Credentials File
