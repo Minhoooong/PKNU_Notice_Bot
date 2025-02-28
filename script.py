@@ -66,27 +66,6 @@ CHAT_ID = os.environ.get('CHAT_ID')
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(bot=bot)
 
-# 환경 변수 설정
-credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-if credentials_path is None:
-    logging.error("GOOGLE_APPLICATION_CREDENTIALS 환경 변수가 설정되지 않았습니다.")
-else:
-    with open("announcements_seen.json", "w") as f:
-        f.write(credentials_path)
-
-# 기존 코드 실행
-credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-if credentials_path:
-    try:
-        with open(credentials_path, "r", encoding="utf-8") as f:
-            credentials_data = f.read()
-        with open("announcements_seen.json", "w", encoding="utf-8") as f:
-            f.write(credentials_data)
-    except Exception as e:
-        logging.error(f"❌ Failed to read credentials file: {e}")
-else:
-    logging.error("❌ GOOGLE_APPLICATION_CREDENTIALS 환경 변수가 설정되지 않았습니다.")
-
 # FSM 상태 정의
 class FilterState(StatesGroup):
     waiting_for_date = State()
@@ -269,16 +248,16 @@ async def manual_check_notices(message: types.Message):
 async def send_notification(notice):
     title, href, department, date = notice
     
-    # Extract text and images
-    text, image_urls = extract_content(href)
+    # ✅ 'await' 사용하여 실행 결과 가져오기
+    text, image_urls = await extract_content(href)
     
     # Prepare message
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n{text}"
     
-    # Analyze images and append to summary
     for image_url in image_urls:
-        text_analysis, label_analysis = analyze_image(image_url)
+        # ✅ 'await' 사용하여 실행 결과 가져오기
+        text_analysis, label_analysis = await analyze_image(image_url)
         if label_analysis:
             message_text += f"\n\n이미지 분석 결과: {', '.join(label_analysis)}"
     
@@ -316,14 +295,16 @@ async def callback_all_notices(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data.startswith("category_"))
 async def callback_category_selection(callback: CallbackQuery, state: FSMContext):
     category_code = callback.data.split("_")[1]
-    notices = get_school_notices(category_code)
     
+    # ✅ 'await' 사용하여 실행 결과 가져오기
+    notices = await get_school_notices(category_code)
+
     if not notices:
         await callback.message.answer("해당 카테고리의 공지사항이 없습니다.")
     else:
-        for notice in notices[:7]:  # 최근 5개만 표시
+        for notice in notices[:7]:  # ✅ 리스트에서 항목 가져오기
             await send_notification(notice)
-    
+
     await state.clear()
     await callback.answer()
 
@@ -384,8 +365,11 @@ async def run_bot():
 if __name__ == '__main__':
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    
+
+    loop = asyncio.get_event_loop()
     try:
-        asyncio.run(run_bot())
-    except RuntimeError:
-        logging.error("❌ asyncio 이벤트 루프 실행 중 오류 발생.")
+        loop.run_until_complete(run_bot())
+    except RuntimeError as e:
+        logging.error(f"❌ asyncio 이벤트 루프 실행 중 오류 발생: {e}")
+    finally:
+        loop.close()
