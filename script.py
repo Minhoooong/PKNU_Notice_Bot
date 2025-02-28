@@ -18,9 +18,11 @@ import html
 from datetime import datetime
 import urllib.parse
 
+# 한국어 문장 분할을 위한 kss 라이브러리
+import kss
+
 # 한국어 요약을 위해 transformers의 pipeline과 tokenizer 불러오기
 from transformers import pipeline, AutoTokenizer
-# gogamza/kobart-summarization 모델 사용 (무료, 오픈소스)
 tokenizer = AutoTokenizer.from_pretrained("gogamza/kobart-summarization")
 summarizer = pipeline("summarization", model="gogamza/kobart-summarization")
 
@@ -143,19 +145,55 @@ async def get_school_notices(category=""):
         logging.exception("❌ Error in get_school_notices")
         return []
 
-# --- 웹페이지 텍스트 추출 및 한국어 요약 ---
+# --- 푸터 제거: 불필요한 정보 필터링 ---
+def filter_footer(text):
+    keywords = ["TEL", "FAX", "COPYRIGHT", "캠퍼스", "부산광역시"]
+    filtered_lines = []
+    for line in text.splitlines():
+        if not any(keyword in line for keyword in keywords):
+            filtered_lines.append(line)
+    return " ".join(filtered_lines)
+
+# --- 텍스트 요약: 문장 단위 청크로 분할 후 요약 ---
 def summarize_text(text):
     try:
-        # 텍스트가 너무 짧으면 요약하지 않고 원본 반환
         if len(text.split()) < 50:
             return text
         
-        # 토크나이저를 사용하여 최대 1024 토큰으로 자르기 (모델의 입력 제한 고려)
-        tokens = tokenizer.encode(text, truncation=True, max_length=1024)
-        truncated_text = tokenizer.decode(tokens, skip_special_tokens=True)
+        # 푸터 등 불필요한 부분 제거
+        text = filter_footer(text)
         
-        summary = summarizer(truncated_text, max_length=130, min_length=30, do_sample=False)
-        return summary[0]['summary_text']
+        # kss로 문장 분할 (한국어 문장 단위 분할)
+        sentences = kss.split(text)
+        
+        chunks = []
+        current_chunk = ""
+        for sentence in sentences:
+            # 문장 추가 후 현재 청크를 토큰화하여 길이 확인
+            new_chunk = current_chunk + " " + sentence if current_chunk else sentence
+            tokens = tokenizer.encode(new_chunk)
+            if len(tokens) > 1024:
+                if current_chunk.strip():
+                    chunks.append(current_chunk.strip())
+                current_chunk = sentence
+            else:
+                current_chunk = new_chunk
+        if current_chunk.strip():
+            chunks.append(current_chunk.strip())
+        
+        summaries = []
+        for chunk in chunks:
+            summary = summarizer(chunk, max_length=130, min_length=30, do_sample=False)
+            summaries.append(summary[0]['summary_text'])
+        combined_summary = " ".join(summaries)
+        
+        # 최종 요약: 결합한 요약이 너무 길면 한 번 더 요약
+        final_tokens = tokenizer.encode(combined_summary)
+        if len(final_tokens) > 1024:
+            final_summary = summarizer(combined_summary, max_length=130, min_length=30, do_sample=False)
+            return final_summary[0]['summary_text']
+        else:
+            return combined_summary
     except Exception as e:
         logging.error(f"Summarization error: {e}")
         return text
@@ -199,20 +237,16 @@ async def is_valid_url(url):
 # --- 새로운 공지사항 확인 및 알림 전송 ---
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
-    
     seen_announcements = load_seen_announcements()
     logging.info(f"Loaded seen announcements: {seen_announcements}")
-
     current_notices = await get_school_notices()
     logging.info(f"Fetched current notices: {current_notices}")
-
     seen_titles_urls = {(title, url) for title, url, *_ in seen_announcements}
     new_notices = [
         (title, href, department, date) for title, href, department, date in current_notices
         if (title, href) not in seen_titles_urls
     ]
     logging.info(f"DEBUG: New notices detected: {new_notices}")
-
     if new_notices:
         for notice in new_notices:
             await send_notification(notice)
@@ -229,15 +263,12 @@ def push_changes():
         if not pat:
             logging.error("❌ GitHub PAT가 설정되지 않았습니다. Push를 생략합니다.")
             return
-        
         os.environ["GIT_ASKPASS"] = "echo"
         os.environ["GIT_PASSWORD"] = pat
-
         subprocess.run(["git", "config", "--global", "credential.helper", "store"], check=True)
         subprocess.run(["git", "add", "announcements_seen.json"], check=True)
         subprocess.run(["git", "commit", "-m", "Update announcements_seen.json"], check=True)
         subprocess.run(["git", "push", "origin", "main"], check=True)
-
         logging.info("✅ Successfully pushed changes to GitHub.")
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
@@ -255,11 +286,9 @@ async def manual_check_notices(message: types.Message):
 async def send_notification(notice):
     title, href, department, date = notice
     summary_text, image_urls = await extract_content(href)
-    
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
     message_text += f"{html.escape(summary_text)}"
-    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
@@ -308,23 +337,18 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
 async def process_date_input(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     logging.info(f"Current FSM state raw: {current_state}")
-
     if current_state != FilterState.waiting_for_date.state:
         logging.warning("Received date input, but state is incorrect.")
         return
-
     input_text = message.text.strip()
     logging.info(f"Received date input: {input_text}")
-
     current_year = datetime.now().year
     full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
     logging.info(f"Converted full date string: {full_date_str}")
-
     filter_date = parse_date(full_date_str)
     if filter_date is None:
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 입력해 주세요.")
         return
-
     notices = [n for n in await get_school_notices() if parse_date(n[3]) == filter_date]
     if not notices:
         logging.info(f"No notices found for {full_date_str}")
@@ -333,7 +357,6 @@ async def process_date_input(message: types.Message, state: FSMContext):
         await message.answer(f"📢 {input_text}의 공지사항입니다.", reply_markup=ReplyKeyboardRemove())
         for notice in notices:
             await send_notification(notice)
-
     logging.info("Clearing FSM state.")
     await state.clear()
 
