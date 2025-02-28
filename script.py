@@ -93,14 +93,15 @@ def parse_date(date_str):
         return None
 
 # --- HTTP 요청 함수 (fetch_url) ---
+session = aiohttp.ClientSession()  # ✅ 전역 세션 생성
+
 async def fetch_url(url):
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as response:
-                if response.status != 200:
-                    logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
-                    return None
-                return await response.text()
+        async with session.get(url, timeout=10) as response:
+            if response.status != 200:
+                logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
+                return None
+            return await response.text()
     except Exception as e:
         logging.error(f"❌ URL 요청 오류: {url}, {e}")
         return None
@@ -164,8 +165,6 @@ def text_rank_key_sentences(text, top_n=5):
     ranked_sentences = sorted(((scores[i], s) for i, s in enumerate(sentences)), reverse=True)
     return [s for _, s in ranked_sentences[:top_n]]
 
-    return key_sentences
-
 def clean_and_format_text(text):
     """
     - 중복 단어 및 반복된 표현 제거
@@ -214,34 +213,31 @@ def extract_key_sentences(text, top_n=5):
 
 # --- 텍스트 요약 ---
 def summarize_text(text):
-    if not text.strip():
-        return None  # ✅ 요약할 내용이 없으면 아무것도 반환하지 않음
+    try:
+        if not text.strip():
+            return None
 
-    key_sentences = text_rank_key_sentences(text, top_n=7)
+        key_sentences = text_rank_key_sentences(text, top_n=7)
+        if not key_sentences:
+            return None
+
+        combined_text = " ".join(key_sentences)
+        inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+        summary_ids = model.generate(
+            input_ids=inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
+            num_beams=6,
+            length_penalty=1.0,
+            max_length=100,
+            min_length=30,
+            repetition_penalty=1.5,
+            no_repeat_ngram_size=15,
+        )
+        return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
     
-    if not key_sentences:  # ✅ 중요 문장이 없으면 None 반환
-        return None
-
-    combined_text = " ".join(key_sentences)
-    
-    inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
-    summary_ids = model.generate(
-        input_ids=inputs["input_ids"],
-        attention_mask=inputs["attention_mask"],
-        num_beams=6,
-        length_penalty=1.0,
-        max_length=100,
-        min_length=30,
-        repetition_penalty=1.5,
-        no_repeat_ngram_size=15,
-    )
-
-    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-
     except Exception as e:
-        error_message = f"❌ KoBART 요약 오류: {str(e)}"
-        logging.error(error_message)
-        return error_message  # 예외 메시지를 직접 반환
+        logging.error(f"❌ KoBART 요약 오류: {e}")
+        return None  # ✅ 오류 발생 시 None 반환
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
