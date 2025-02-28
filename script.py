@@ -20,7 +20,7 @@ import urllib.parse
 import tempfile
 
 
-# 환경 변수에서 JSON 파일 경로 가져오기
+# 환경 변수에서 JSON 파일 내용 가져오기
 credentials_content = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_CONTENT")
 
 if not credentials_content:
