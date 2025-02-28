@@ -11,26 +11,30 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Set up Python
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v4
       with:
         python-version: '3.8'
 
     - name: Install dependencies
       run: pip install -r requirements.txt
 
-    - name: Configure GOOGLE_APPLICATION_CREDENTIALS
-      run: echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > $HOME/gcloud.json
-      
+    - name: Setup Google Cloud Credentials
+      run: echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > /tmp/gcloud.json
+      shell: bash
+
     - name: Set environment variable
-      run: export GOOGLE_APPLICATION_CREDENTIALS=$HOME/gcloud.json
+      run: echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud.json" >> $GITHUB_ENV
 
     - name: Run announcement bot script
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         CHAT_ID: ${{ secrets.CHAT_ID }}
         MY_PAT: ${{ secrets.MY_PAT }}
-        GOOGLE_APPLICATION_CREDENTIALS: $HOME/gcloud.json
+        GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcloud.json
       run: python script.py
+
+    - name: Clean up credentials
+      run: rm -f /tmp/gcloud.json
