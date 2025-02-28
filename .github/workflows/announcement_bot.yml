@@ -32,6 +32,9 @@ jobs:
     - name: Set environment variable
       run: echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud.json" >> $GITHUB_ENV
 
+    - name: Decode GOOGLE_APPLICATION_CREDENTIALS_CONTENT
+      run: echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}" | base64 --decode > $HOME/gcloud.json
+
     - name: Run announcement bot script
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
