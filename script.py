@@ -1,3 +1,4 @@
+import traceback
 import logging
 import asyncio
 import sys
@@ -95,7 +96,7 @@ def parse_date(date_str):
 async def fetch_url(url):
     """ 비동기 HTTP 요청 함수 """
     try:
-        async with aiohttp.ClientSession() as session:  # ✅ 비동기 함수 내에서 세션 생성
+        async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=10) as response:
                 if response.status != 200:
                     logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
@@ -103,6 +104,7 @@ async def fetch_url(url):
                 return await response.text()
     except Exception as e:
         logging.error(f"❌ URL 요청 오류: {url}, {e}")
+        logging.error(traceback.format_exc())  # ✅ traceback 추가
         return None
 
 # --- 공지사항 크롤링 ---
@@ -213,46 +215,51 @@ def extract_key_sentences(text, top_n=5):
 # --- 텍스트 요약 ---
 def summarize_text(text):
     if text is None or not text.strip():
-        return " "  # ✅ 기본 값 반환
+        return "요약할 수 없는 공지입니다."  # ✅ 기본 값 반환
 
     key_sentences = text_rank_key_sentences(text, top_n=7)
-    if not key_sentences:
-        return " "  # ✅ 기본 값 반환
-
     combined_text = " ".join(key_sentences)
 
+    if len(combined_text) == 0:
+        return "요약할 수 없는 공지입니다."  # ✅ 빈 입력 방지
+
     try:
-        inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=False)
+        inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=2048)
         summary_ids = model.generate(
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
             num_beams=6,
             length_penalty=1.0,
-            max_length=100,
-            min_length=30,
+            max_length=200,  # ✅ 요약 결과 길이를 늘림
+            min_length=50,
             repetition_penalty=1.5,
             no_repeat_ngram_size=15,
         )
         return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-    
+
     except Exception as e:
         logging.error(f"❌ KoBART 요약 오류: {e}")
-        return " "  # ✅ 기본 값 반환
-
+        logging.error(traceback.format_exc())  # ✅ traceback 추가
+        return "요약할 수 없는 공지입니다."
+        
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
     try:
         html_content = await fetch_url(url)
-        if html_content is None:
+        if html_content is None or len(html_content.strip()) == 0:  # ✅ fetch_url() 실패 시 즉시 반환
             logging.error(f"❌ Failed to fetch content: {url}")
-            return " ", []
+            return "페이지를 불러올 수 없습니다.", []
 
         soup = BeautifulSoup(html_content, 'html.parser')
         container = soup.find("div", class_="bdvTxt_wrap")
         if not container:
-            container = soup
+            container = soup  # ✅ 페이지 구조가 다를 경우 기본 컨테이너 사용
 
         paragraphs = container.find_all('p')
+        if not paragraphs:  # ✅ `find_all('p')`이 없을 경우 처리
+            logging.error(f"❌ No text content found in {url}")
+            return "본문이 없습니다.", []
+
         raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
 
         # raw_text를 요약하기 전에 검증합니다.
@@ -260,23 +267,17 @@ async def extract_content(url):
             summary_text = summarize_text(raw_text)
             if summary_text is None:
                 logging.error(f"❌ Failed to summarize content: {url}")
-                summary_text = " "
+                summary_text = "요약할 수 없는 공지입니다."
         else:
-            summary_text = " "
+            summary_text = "본문이 없습니다."
 
         images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if "/upload/" in img['src']]
         return summary_text, images
 
     except Exception as e:
-        logging.error(f"❌ Exception in extract_content: {e}")
-        return " ", []
-
-        images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if "/upload/" in img['src']]
-        return summary_text, images
-
-    except Exception as e:
-        logging.error(f"❌ Exception in extract_content: {e}")
-        return " ", []
+        logging.error(f"❌ Exception in extract_content for URL {url}: {e}")
+        logging.error(traceback.format_exc())  # ✅ 상세한 traceback 출력 추가
+        return "처리 중 오류가 발생했습니다.", []
 
 async def is_valid_url(url):
     try:
