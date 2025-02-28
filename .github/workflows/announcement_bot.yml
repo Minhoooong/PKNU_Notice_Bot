@@ -22,8 +22,12 @@ jobs:
       run: pip install -r requirements.txt
 
     - name: Setup Google Cloud Credentials
-      run: echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > /tmp/gcloud.json
+      run: |
+        echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" | base64 --decode > /tmp/gcloud.json
       shell: bash
+
+    - name: Verify Google Cloud Credentials File
+      run: cat /tmp/gcloud.json
 
     - name: Set environment variable
       run: echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud.json" >> $GITHUB_ENV
