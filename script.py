@@ -152,18 +152,33 @@ async def get_school_notices(category=""):
 
 # --- TextRank 기반 중요 문장 추출 ---
 def text_rank_key_sentences(text, top_n=5):
-    sentences = kss.split_sentences(text, backend="auto")  # ✅ 가장 빠른 백엔드 선택
+    sentences = kss.split_sentences(text, backend="auto")
     if len(sentences) <= top_n:
-        return sentences
+        return sentences  # 문장이 적으면 그대로 반환
 
     vectorizer = TfidfVectorizer()
     sentence_vectors = vectorizer.fit_transform(sentences).toarray()
 
-    # ✅ 유사도가 높은 상위 N개 문장만 비교하여 속도 향상
-    similarity_matrix = cosine_similarity(sentence_vectors[:top_n], sentence_vectors[:top_n])
+    # ✅ 유사도 행렬에서 예외 처리 추가
+    if sentence_vectors.shape[0] < 2:
+        logging.warning("⚠️ 문장 개수가 너무 적어 TextRank 실행 불가.")
+        return sentences  # 문장이 1개 이하라면 그대로 반환
 
-    scores = nx.pagerank(nx.from_numpy_array(similarity_matrix))
-    ranked_sentences = sorted(((scores[i], s) for i, s in enumerate(sentences)), reverse=True)
+    similarity_matrix = cosine_similarity(sentence_vectors, sentence_vectors)
+    nx_graph = nx.from_numpy_array(similarity_matrix)
+    
+    try:
+        scores = nx.pagerank(nx_graph)
+    except Exception as e:
+        logging.error(f"❌ PageRank 오류: {e}")
+        return sentences  # 예외 발생 시 원본 문장 반환
+
+    # ✅ scores에 존재하는 키만 필터링하여 처리
+    ranked_sentences = sorted(
+        ((scores.get(i, 0), s) for i, s in enumerate(sentences) if i in scores), 
+        reverse=True
+    )
+    
     return [s for _, s in ranked_sentences[:top_n]]
 
 def clean_and_format_text(text):
@@ -218,10 +233,10 @@ def summarize_text(text):
         return "요약할 수 없는 공지입니다."  # ✅ 기본 값 반환
 
     key_sentences = text_rank_key_sentences(text, top_n=7)
-    combined_text = " ".join(key_sentences)
-
-    if len(combined_text) == 0:
+    if not key_sentences:
         return "요약할 수 없는 공지입니다."  # ✅ 빈 입력 방지
+
+    combined_text = " ".join(key_sentences)
 
     try:
         inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=2048)
@@ -230,7 +245,7 @@ def summarize_text(text):
             attention_mask=inputs["attention_mask"],
             num_beams=6,
             length_penalty=1.0,
-            max_length=200,  # ✅ 요약 결과 길이를 늘림
+            max_length=200,
             min_length=50,
             repetition_penalty=1.5,
             no_repeat_ngram_size=15,
@@ -239,30 +254,28 @@ def summarize_text(text):
 
     except Exception as e:
         logging.error(f"❌ KoBART 요약 오류: {e}")
-        logging.error(traceback.format_exc())  # ✅ traceback 추가
         return "요약할 수 없는 공지입니다."
         
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
     try:
         html_content = await fetch_url(url)
-        if html_content is None or len(html_content.strip()) == 0:  # ✅ fetch_url() 실패 시 즉시 반환
+        if html_content is None or len(html_content.strip()) == 0:
             logging.error(f"❌ Failed to fetch content: {url}")
             return "페이지를 불러올 수 없습니다.", []
 
         soup = BeautifulSoup(html_content, 'html.parser')
         container = soup.find("div", class_="bdvTxt_wrap")
         if not container:
-            container = soup  # ✅ 페이지 구조가 다를 경우 기본 컨테이너 사용
+            container = soup
 
         paragraphs = container.find_all('p')
-        if not paragraphs:  # ✅ `find_all('p')`이 없을 경우 처리
+        if not paragraphs:
             logging.error(f"❌ No text content found in {url}")
             return "본문이 없습니다.", []
 
         raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
 
-        # raw_text를 요약하기 전에 검증합니다.
         if raw_text.strip():
             summary_text = summarize_text(raw_text)
             if summary_text is None:
@@ -276,7 +289,6 @@ async def extract_content(url):
 
     except Exception as e:
         logging.error(f"❌ Exception in extract_content for URL {url}: {e}")
-        logging.error(traceback.format_exc())  # ✅ 상세한 traceback 출력 추가
         return "처리 중 오류가 발생했습니다.", []
 
 async def is_valid_url(url):
