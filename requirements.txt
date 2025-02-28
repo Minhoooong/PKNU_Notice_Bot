@@ -1,7 +1,6 @@
 aiogram
 beautifulsoup4
-requests
-google-cloud-vision
 transformers
 torch
 kss
+aiohttp
