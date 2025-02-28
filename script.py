@@ -133,7 +133,7 @@ async def check_for_new_notices():
         save_seen_announcements(seen_announcements)
         logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
     else:
-        logging.info("✅ 새로운 공지 없음")
+        logging.info("✅ 새로운 공지사항이 없습니다.")
         
 # GitHub Push (PAT 예외 처리 추가)
 def push_changes():
@@ -162,9 +162,9 @@ async def manual_check_notices(message: types.Message):
 # 알림 전송
 async def send_notification(notice):
     title, href, department, date = notice
-    message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
+    message_text = f"[📢부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔗홈페이지 이동", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
 # 메시지 ID 저장을 위한 전역 변수
@@ -173,14 +173,14 @@ async def send_notification(notice):
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="날짜 입력", callback_data="filter_date"), InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
+        [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"), InlineKeyboardButton(text="📢전체 공지사항", callback_data="all_notices")]
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
 # 날짜 입력 요청 처리
 @dp.callback_query(F.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요 (예: 01/31):")
+    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
     await callback.answer()
 
@@ -237,11 +237,11 @@ async def process_date_input(message: types.Message, state: FSMContext):
 
     if not notices:
         logging.info(f"No notices found for {full_date_str}")
-        await message.answer(f"{input_text} 날짜의 공지사항이 없습니다.")
+        await message.answer(f"📢 {input_text}의 공지사항이 없습니다.")
     else:
+        await message.answer(f"📢 {input_text}의 공지사항입니다.", reply_markup=ReplyKeyboardRemove())
         for notice in notices:
             await send_notification(notice)
-        await message.answer(f"{input_text} 날짜의 공지사항을 전송했습니다.", reply_markup=ReplyKeyboardRemove())
 
     logging.info("Clearing FSM state.")
     await state.clear()
