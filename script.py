@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, CallbackQuery
+from transformers import PreTrainedTokenizerFast, BartForConditionalGeneration
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -18,9 +19,6 @@ import urllib.parse
 
 # 한국어 문장 분할을 위한 kss 라이브러리
 import kss
-
-# 한국어 요약을 위해 transformers의 PreTrainedTokenizerFast와 BartForConditionalGeneration 불러오기
-from transformers import PreTrainedTokenizerFast, BartForConditionalGeneration
 
 # "EbanLee/kobart-summary-v3" 모델 사용
 MODEL_NAME = "EbanLee/kobart-summary-v3"
@@ -124,14 +122,17 @@ async def get_school_notices(category=""):
         logging.exception("❌ Error in get_school_notices")
         return []
 
-# --- 푸터 제거: 불필요한 정보 필터링 ---
+# --- 불필요한 하단 문구 제거 ---
 def filter_footer(text):
-    footer = ("대연캠퍼스(48513) 부산광역시 남구 용소로 45 TEL : 051-629-4114 FAX : 051-629-4114 " 
-              "FAX : 051-629-5119 용당캠퍼스(48547) 부산광역시 남구 신선로 365 TEL : 051-629-4114 "
-              "FAX : 051-629-6040 COPYRIGHT(C) 2021 PUKYONG NATIONAL UNIVERSITY. ALL RIGHTS RESERVED.")
+    # 사용자 제공 문자열과 정확히 일치하도록 설정
+    footer = (
+        "대연캠퍼스(48513) 부산광역시 남구 용소로 45 TEL : 051-629-4114 FAX : 051-629-4119 "
+        "용당캠퍼스(48547) 부산광역시 남구 신선로 365 TEL : 051-629-4114 FAX : 051-629-6040 "
+        "COPYRIGHT(C) 2021 PUKYONG NATIONAL UNIVERSITY. ALL RIGHTS RESERVED."
+    )
     return text.replace(footer, "").strip()
 
-# --- 텍스트 요약: "EbanLee/kobart-summary-v3" 모델을 사용하여 문장 단위 청크로 분할 후 요약 ---
+# --- 텍스트 요약 ---
 def summarize_text(text):
     try:
         if len(text.split()) < 50:
@@ -201,6 +202,7 @@ def summarize_text(text):
         logging.error(f"Summarization error: {e}")
         return text
 
+# --- 콘텐츠 추출 (텍스트 요약 및 이미지 크롤링) ---
 async def extract_content(url):
     try:
         async with aiohttp.ClientSession() as session:
@@ -212,7 +214,7 @@ async def extract_content(url):
         raw_text = ' '.join([para.get_text() for para in paragraphs])
         summary_text = summarize_text(raw_text)
 
-        # 이미지 URL 추출 (이미지 분석 없이 URL 그대로 반환)
+        # 이미지 URL 추출: /upload/가 포함된 URL만 사용
         images = soup.find_all('img')
         image_urls = []
         for img in images:
@@ -220,6 +222,9 @@ async def extract_content(url):
             if src:
                 if not src.startswith(('http://', 'https://')):
                     src = urllib.parse.urljoin(url, src)
+                # /upload/가 없는 이미지는 제외
+                if "/upload/" not in src:
+                    continue
                 if await is_valid_url(src):
                     image_urls.append(src)
         return summary_text, image_urls
