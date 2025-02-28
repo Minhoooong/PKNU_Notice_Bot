@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+from google.cloud import vision
 import json
 import os
 import subprocess
@@ -107,7 +108,33 @@ def get_school_notices(category=""):
     except Exception as e:
         logging.exception("Error in get_school_notices")
         return []
-        
+
+#URL내 이미지 추출
+def extract_content(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    
+    # Extract text
+    paragraphs = soup.find_all('p')
+    text = ' '.join([para.get_text() for para in paragraphs])
+    
+    # Extract images
+    images = soup.find_all('img')
+    image_urls = [img['src'] for img in images if 'src' in img.attrs]
+    
+    return text, image_urls
+
+# 이미지 분석 처리
+def analyze_image(image_url):
+    client = vision.ImageAnnotatorClient()
+    response = requests.get(image_url)
+    image = vision.Image(content=response.content)
+
+    response = client.label_detection(image=image)
+    labels = response.label_annotations
+
+    return [label.description for label in labels]
+
 # 새로운 공지사항 확인 및 알림 전송
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
@@ -162,9 +189,20 @@ async def manual_check_notices(message: types.Message):
 # 알림 전송
 async def send_notification(notice):
     title, href, department, date = notice
-    message_text = f"[📢부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
-    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}"
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔗홈페이지 이동", url=href)]])
+    
+    # Extract text and images
+    text, image_urls = extract_content(href)
+    
+    # Prepare message
+    message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
+    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n{text}"
+    
+    # Analyze images and append to summary
+    for image_url in image_urls:
+        labels = analyze_image(image_url)
+        message_text += f"\n\n이미지 분석 결과: {', '.join(labels)}"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
 # 메시지 ID 저장을 위한 전역 변수
