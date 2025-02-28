@@ -6,34 +6,27 @@ on:
   workflow_dispatch:
 
 jobs:
-  check_announcements:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v2
 
-      - name: Set up Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: '3.8'
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.8'
 
-      - name: Install dependencies
-        run: |
-          pip install requests beautifulsoup4 aiogram
+    - name: Install dependencies
+      run: pip install -r requirements.txt
 
-      - name: Setup Git Authentication
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          git remote set-url origin https://x-access-token:${{ secrets.MY_PAT }}@github.com/Minhoooong/PKNU_Notice_Bot.git
+    - name: Set up Google Cloud credentials
+      run: echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > path_to_temp_credentials.json
 
-      - name: Set up Google Cloud credentials
-        run: echo "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}" > path_to_temp_credentials.json
-
-      - name: Run announcement bot script
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
-          MY_PAT: ${{ secrets.MY_PAT }}
-        run: python script.py
+    - name: Run announcement bot script
+      env:
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+        MY_PAT: ${{ secrets.MY_PAT }}
+      run: python script.py
