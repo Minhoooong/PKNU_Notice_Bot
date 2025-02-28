@@ -251,13 +251,13 @@ async def send_notification(notice):
     
     # Prepare message
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
-    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n{text}"
+    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n{html.escape(text)}"  # Ensure text is escaped
     
     for image_url in image_urls:
         # ✅ 'await' 사용하여 실행 결과 가져오기
         text_analysis, label_analysis = await analyze_image(image_url)
         if label_analysis:
-            message_text += f"\n\n이미지 분석 결과: {', '.join(label_analysis)}"
+            message_text += f"\n\n이미지 분석 결과: {', '.join(map(html.escape, label_analysis))}"  # Escape labels
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
