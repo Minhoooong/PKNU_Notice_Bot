@@ -62,6 +62,30 @@ class FilterState(StatesGroup):
     waiting_for_date = State()
     selecting_category = State()
 
+CACHE_FILE = "announcements_seen.json"
+
+def load_cache():
+    """ 캐시 파일에서 기존 공지사항 로드 """
+    if os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_cache(data):
+    """ 새로운 공지사항을 캐시에 저장 """
+    with open(CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+def is_new_announcement(title, href):
+    """ 새로운 공지사항인지 확인 """
+    cache = load_cache()
+    key = f"{title}::{href}"
+    if key in cache:
+        return False  # 이미 저장된 공지사항이면 False 반환
+    cache[key] = True
+    save_cache(cache)
+    return True  # 새로운 공지사항이면 True 반환
+
 # --- 날짜 파싱 함수 ---
 def parse_date(date_str):
     try:
@@ -128,27 +152,19 @@ async def get_school_notices(category=""):
 
 # --- TextRank 기반 중요 문장 추출 ---
 def text_rank_key_sentences(text, top_n=5):
-    """
-    TextRank 알고리즘을 활용하여 중요 문장 선별
-    """
-    sentences = kss.split_sentences(text, backend="mecab")
+    sentences = kss.split_sentences(text, backend="auto")  # ✅ 가장 빠른 백엔드 선택
     if len(sentences) <= top_n:
-        return sentences  # 문장이 적으면 그대로 반환
+        return sentences
 
-    # TF-IDF 벡터화
     vectorizer = TfidfVectorizer()
     sentence_vectors = vectorizer.fit_transform(sentences).toarray()
 
-    # 코사인 유사도 계산
-    similarity_matrix = cosine_similarity(sentence_vectors, sentence_vectors)
+    # ✅ 유사도가 높은 상위 N개 문장만 비교하여 속도 향상
+    similarity_matrix = cosine_similarity(sentence_vectors[:top_n], sentence_vectors[:top_n])
 
-    # 그래프 생성 및 PageRank 적용
-    nx_graph = nx.from_numpy_array(similarity_matrix)
-    scores = nx.pagerank(nx_graph)
-
-    # 중요도가 높은 문장 정렬 후 선택
+    scores = nx.pagerank(nx.from_numpy_array(similarity_matrix))
     ranked_sentences = sorted(((scores[i], s) for i, s in enumerate(sentences)), reverse=True)
-    key_sentences = [s for _, s in ranked_sentences[:top_n]]
+    return [s for _, s in ranked_sentences[:top_n]]
 
     return key_sentences
 
@@ -167,7 +183,7 @@ def clean_and_format_text(text):
     text = " ".join(cleaned_words)
 
     # 2️⃣ 문장 마침표 보정
-    sentences = kss.split_sentences(text, backend="mecab")  # 문장 분리
+    sentences = kss.split_sentences(text, backend="auto")  # 문장 분리
     cleaned_sentences = []
     for sentence in sentences:
         if not sentence.endswith(('.', '!', '?', '"', "'")):
@@ -184,7 +200,7 @@ def extract_key_sentences(text, top_n=5):
     중요 문장을 추출하는 함수.
     TextRank 알고리즘을 적용하여 상위 N개의 문장을 선택.
     """
-    sentences = kss.split_sentences(text, backend="mecab")
+    sentences = kss.split_sentences(text, backend="auto")
     
     # 단어 빈도 기반으로 중요 단어를 선별
     word_count = Counter(" ".join(sentences).split())
