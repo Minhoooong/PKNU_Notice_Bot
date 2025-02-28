@@ -213,11 +213,11 @@ def extract_key_sentences(text, top_n=5):
 # --- 텍스트 요약 ---
 def summarize_text(text):
     if text is None or not text.strip():
-        return None  # ✅ 입력이 `None`이면 바로 반환
+        return ""  # ✅ 기본 값 반환
 
     key_sentences = text_rank_key_sentences(text, top_n=7)
     if not key_sentences:
-        return None  # ✅ 중요 문장이 없으면 None 반환
+        return ""  # ✅ 기본 값 반환
 
     combined_text = " ".join(key_sentences)
 
@@ -237,35 +237,35 @@ def summarize_text(text):
     
     except Exception as e:
         logging.error(f"❌ KoBART 요약 오류: {e}")
-        return None  # ✅ 오류 발생 시 None 반환
+        return ""  # ✅ 기본 값 반환
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
     try:
         html_content = await fetch_url(url)
-        if html_content is None:  # ✅ fetch_url()이 None을 반환하면 처리
+        if html_content is None:  # ✅ fetch_url()이 None을 반환하면 빈 문자열 처리
             logging.error(f"❌ Failed to fetch content: {url}")
-            return None, []
+            return "", []
 
         soup = BeautifulSoup(html_content, 'html.parser')
         container = soup.find("div", class_="bdvTxt_wrap")
         if not container:
-            container = soup  # ✅ 기본 컨테이너 설정
+            container = soup
 
         paragraphs = container.find_all('p')
         raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
 
-        summary_text = summarize_text(raw_text)  # ✅ summarize_text()가 None을 반환할 수도 있음
-        if summary_text is None:
+        summary_text = summarize_text(raw_text)
+        if summary_text is None:  # ✅ summary_text가 None이면 빈 문자열 반환
             logging.error(f"❌ Failed to summarize content: {url}")
-            return None, []
+            return "", []
 
         images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if "/upload/" in img['src']]
         return summary_text, images
 
     except Exception as e:
         logging.error(f"❌ Exception in extract_content: {e}")
-        return None, []
+        return "", []
 
 async def is_valid_url(url):
     try:
@@ -341,11 +341,18 @@ async def manual_check_notices(message: types.Message):
 async def send_notification(notice):
     title, href, department, date = notice
     summary_text, image_urls = await extract_content(href)
+
+    # ✅ summary_text가 None이면 기본 메시지 사용
+    if summary_text is None:
+        summary_text = ""
+
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
     message_text += f"{html.escape(summary_text)}"
+
     if image_urls:
         message_text += "\n\n[첨부 이미지]\n" + "\n".join(image_urls)
+
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
