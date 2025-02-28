@@ -212,15 +212,16 @@ def extract_key_sentences(text, top_n=5):
 
 # --- 텍스트 요약 ---
 def summarize_text(text):
+    if text is None or not text.strip():
+        return None  # ✅ 입력이 `None`이면 바로 반환
+
+    key_sentences = text_rank_key_sentences(text, top_n=7)
+    if not key_sentences:
+        return None  # ✅ 중요 문장이 없으면 None 반환
+
+    combined_text = " ".join(key_sentences)
+
     try:
-        if not text.strip():
-            return None
-
-        key_sentences = text_rank_key_sentences(text, top_n=7)
-        if not key_sentences:
-            return None
-
-        combined_text = " ".join(key_sentences)
         inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
         summary_ids = model.generate(
             input_ids=inputs["input_ids"],
@@ -241,35 +242,30 @@ def summarize_text(text):
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as response:
-                html_content = await response.text()
+        html_content = await fetch_url(url)
+        if html_content is None:  # ✅ fetch_url()이 None을 반환하면 처리
+            logging.error(f"❌ Failed to fetch content: {url}")
+            return None, []
+
         soup = BeautifulSoup(html_content, 'html.parser')
-        # 특정 영역 내의 콘텐츠 추출
         container = soup.find("div", class_="bdvTxt_wrap")
         if not container:
-            container = soup
-        # 텍스트 추출: 해당 영역의 <p> 태그에서 텍스트만 가져옴
+            container = soup  # ✅ 기본 컨테이너 설정
+
         paragraphs = container.find_all('p')
         raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
-        # 추출한 텍스트를 요약 후 가독성 정리
-        summary_text = clean_and_format_text(summarize_text(raw_text))
-        # 이미지 추출: /upload/ 경로가 포함된 URL만 선택
-        images = container.find_all('img')
-        image_urls = []
-        for img in images:
-            src = img.get('src')
-            if src:
-                if not src.startswith(('http://', 'https://')):
-                    src = urllib.parse.urljoin(url, src)
-                if "/upload/" not in src:
-                    continue
-                if await is_valid_url(src):
-                    image_urls.append(src)
-        return summary_text, image_urls
+
+        summary_text = summarize_text(raw_text)  # ✅ summarize_text()가 None을 반환할 수도 있음
+        if summary_text is None:
+            logging.error(f"❌ Failed to summarize content: {url}")
+            return None, []
+
+        images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if "/upload/" in img['src']]
+        return summary_text, images
+
     except Exception as e:
-        logging.error(f"❌ Failed to fetch content from {url}: {e}")
-        return "", []
+        logging.error(f"❌ Exception in extract_content: {e}")
+        return None, []
 
 async def is_valid_url(url):
     try:
