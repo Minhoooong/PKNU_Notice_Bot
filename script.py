@@ -2,7 +2,6 @@ import logging
 import asyncio
 import sys
 import aiohttp
-import re
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.bot import DefaultBotProperties
@@ -10,7 +9,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-from collections import Counter
 import json
 import os
 import subprocess
@@ -18,6 +16,10 @@ import html
 from datetime import datetime
 import urllib.parse
 import kss
+import networkx as nx
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from transformers import PreTrainedTokenizerFast, BartForConditionalGeneration
 
 MODEL_NAME = "EbanLee/kobart-summary-v3"
@@ -67,9 +69,16 @@ def parse_date(date_str):
 
 # --- HTTP 요청 함수 (fetch_url) ---
 async def fetch_url(url):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=10) as response:
-            return await response.text()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=10) as response:
+                if response.status != 200:
+                    logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
+                    return None
+                return await response.text()
+    except Exception as e:
+        logging.error(f"❌ URL 요청 오류: {url}, {e}")
+        return None
 
 # --- 공지사항 크롤링 ---
 async def get_school_notices(category=""):
@@ -101,31 +110,56 @@ async def get_school_notices(category=""):
         logging.exception("❌ Error in get_school_notices")
         return []
 
-def clean_summary_text(text):
+# --- TextRank 기반 중요 문장 추출 ---
+def text_rank_key_sentences(text, top_n=5):
     """
-    요약된 문장을 더 깔끔하게 정리하는 후처리 함수
-    1. 중복 단어 및 불필요한 반복 제거
-    2. 문법적으로 올바르게 수정
-    3. 가독성을 높이기 위한 개행 추가
+    TextRank 알고리즘을 활용하여 중요 문장 선별
+    """
+    sentences = kss.split_sentences(text)
+    if len(sentences) <= top_n:
+        return sentences  # 문장이 적으면 그대로 반환
+
+    # TF-IDF 벡터화
+    vectorizer = TfidfVectorizer()
+    sentence_vectors = vectorizer.fit_transform(sentences).toarray()
+
+    # 코사인 유사도 계산
+    similarity_matrix = cosine_similarity(sentence_vectors, sentence_vectors)
+
+    # 그래프 생성 및 PageRank 적용
+    nx_graph = nx.from_numpy_array(similarity_matrix)
+    scores = nx.pagerank(nx_graph)
+
+    # 중요도가 높은 문장 정렬 후 선택
+    ranked_sentences = sorted(((scores[i], s) for i, s in enumerate(sentences)), reverse=True)
+    key_sentences = [s for _, s in ranked_sentences[:top_n]]
+
+    return key_sentences
+
+def clean_and_format_text(text):
+    """
+    - 중복 단어 및 반복된 표현 제거
+    - 문장 마침표 추가
+    - 리스트 형식으로 정리하여 가독성 향상
     """
     if not text.strip():
-        return text  # 내용이 없으면 그대로 반환
+        return text  # 빈 문자열이면 그대로 반환
 
-    # 1. 중복 단어 및 반복된 표현 정리
-    text = re.sub(r'\b(\w+)( \1)+\b', r'\1', text)  # 예: "확인 확인 확인" → "확인"
-    text = re.sub(r'(\S+)\s+\1', r'\1', text)  # 예: "체크 체크" → "체크"
+    # 1️⃣ 중복 단어 및 반복된 표현 제거 (정규식 대신 OrderedDict 활용)
+    words = text.split()
+    cleaned_words = list(OrderedDict.fromkeys(words))  # 중복 제거하면서 순서 유지
+    text = " ".join(cleaned_words)
 
-    # 2. 불완전한 문장 감지 및 수정
-    sentences = kss.split_sentences(text)
+    # 2️⃣ 문장 마침표 보정
+    sentences = kss.split_sentences(text)  # 문장 분리
     cleaned_sentences = []
     for sentence in sentences:
         if not sentence.endswith(('.', '!', '?', '"', "'")):
             sentence += "."  # 문장 끝이 이상하면 마침표 추가
         cleaned_sentences.append(sentence)
 
-    # 3. 가독성을 높이기 위한 정리
-    formatted_text = "\n".join(cleaned_sentences)
-    formatted_text = re.sub(r"\s+", " ", formatted_text).strip()  # 불필요한 공백 제거
+    # 3️⃣ 리스트 형태 적용 (가독성 향상)
+    formatted_text = "\n".join(cleaned_sentences).strip()  # 불필요한 공백 제거
 
     return formatted_text
 
@@ -148,54 +182,18 @@ def extract_key_sentences(text, top_n=5):
 
     return key_sentences[:top_n]  # 상위 N개 문장 선택
 
-def summarize_paragraphs(text):
+# --- 텍스트 요약 ---
+def summarize_text(text):
     """
-    1. 문장을 정리하여 가독성을 높이고
-    2. 문단 단위로 요약한 후
-    3. 최종 요약을 수행한 뒤 깔끔하게 정리
+    1. TextRank로 중요 문장 추출
+    2. KoBART 모델로 요약
     """
-    # 텍스트 가독성 개선
-    text = clean_and_format_text(text)
-    
-    # 공백 및 빈 문단 제거
-    paragraphs = [para.strip() for para in text.split("\n") if para.strip()]
-    
-    # 요약할 내용이 없으면 원본 반환
-    if not paragraphs:
-        logging.warning("❌ 요약할 내용이 없음, 원본 반환")
-        return text  
+    key_sentences = text_rank_key_sentences(text, top_n=7)
+    combined_text = " ".join(key_sentences)
 
-    summarized_paragraphs = []
-    
-    for para in paragraphs:
-        # 문장이 일정 길이 이하이면 요약하지 않고 그대로 추가
-        if len(para.split()) < 20:
-            summarized_paragraphs.append(para)
-            continue
-        
-        inputs = tokenizer(para, return_tensors="pt", padding=True, truncation=True, max_length=1024)
-        summary_ids = model.generate(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            num_beams=6,
-            length_penalty=1.0,
-            max_length=100,
-            min_length=30,
-            repetition_penalty=1.5,
-            no_repeat_ngram_size=15,
-        )
-        summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-        summarized_paragraphs.append(summary_text)
-
-    # 문단별 요약을 결합한 후 최종적으로 다시 한 번 요약
-    final_text = " ".join(summarized_paragraphs)
-
-    # 최종 요약 수행 (최소 길이 조건 추가)
-    if len(final_text.split()) < 20:
-        return final_text
-
-    inputs = tokenizer(final_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
-    final_summary_ids = model.generate(
+    inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+    try:
+    summary_ids = model.generate(
         input_ids=inputs["input_ids"],
         attention_mask=inputs["attention_mask"],
         num_beams=6,
@@ -205,45 +203,41 @@ def summarize_paragraphs(text):
         repetition_penalty=1.5,
         no_repeat_ngram_size=15,
     )
-    
-    # 최종 요약 후 정리 적용
-    return clean_summary_text(tokenizer.decode(final_summary_ids[0], skip_special_tokens=True))
+    except Exception as e:
+        logging.error(f"❌ KoBART 요약 오류: {e}")
+        return "요약을 생성하는 데 실패했습니다."
+
+
+    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
-    """
-    주어진 URL에서 텍스트와 이미지를 크롤링한 후, 요약하여 반환
-    """
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=10) as response:
                 html_content = await response.text()
-
         soup = BeautifulSoup(html_content, 'html.parser')
-        container = soup.find("div", class_="bdvTxt_wrap")  # 공지사항 본문
-        
+        # 특정 영역 내의 콘텐츠 추출
+        container = soup.find("div", class_="bdvTxt_wrap")
         if not container:
-            logging.error("❌ bdvTxt_wrap 요소를 찾을 수 없음")
-            return "", []
-
-        # --- 텍스트 추출 ---
+            container = soup
+        # 텍스트 추출: 해당 영역의 <p> 태그에서 텍스트만 가져옴
         paragraphs = container.find_all('p')
-        raw_text = "\n".join([para.get_text(separator=" ", strip=True) for para in paragraphs])
-        
-        # --- 요약 적용 ---
-        summary_text = summarize_paragraphs(raw_text)  # ✅ 변경된 함수 호출
-
-        # --- 이미지 추출 (/upload/ 만 포함) ---
+        raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
+        # 추출한 텍스트를 요약 후 가독성 정리
+        summary_text = clean_and_format_text(summarize_text(raw_text))
+        # 이미지 추출: /upload/ 경로가 포함된 URL만 선택
         images = container.find_all('img')
         image_urls = []
         for img in images:
             src = img.get('src')
-            if src and "/upload/" in src:
-                if not src.startswith(("http://", "https://")):
+            if src:
+                if not src.startswith(('http://', 'https://')):
                     src = urllib.parse.urljoin(url, src)
+                if "/upload/" not in src:
+                    continue
                 if await is_valid_url(src):
                     image_urls.append(src)
-
         return summary_text, image_urls
     except Exception as e:
         logging.error(f"❌ Failed to fetch content from {url}: {e}")
