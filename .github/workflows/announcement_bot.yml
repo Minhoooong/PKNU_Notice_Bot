@@ -29,34 +29,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Setup Google Cloud Credentials
-        run: |
-          echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > /tmp/gcloud.json
-          echo "✅ Google Cloud Credentials saved successfully."
-
-      - name: Verify Google Cloud Credentials File
-        run: |
-          if [ -s /tmp/gcloud.json ]; then
-            echo "✅ Google Cloud Credentials file exists."
-          else
-            echo "❌ Google Cloud Credentials file is empty!"
-            cat /tmp/gcloud.json  # JSON 파일 내용 출력 (디버깅용)
-            exit 1
-          fi
-
-      - name: Set environment variables for Google Cloud Credentials
-        run: |
-          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud.json" >> $GITHUB_ENV
-          echo "GOOGLE_APPLICATION_CREDENTIALS_CONTENT<<EOF" >> $GITHUB_ENV
-          cat /tmp/gcloud.json >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
       - name: Run announcement bot script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           MY_PAT: ${{ secrets.MY_PAT }}
         run: python script.py
-
-      - name: Clean up credentials
-        run: rm -f /tmp/gcloud.json
