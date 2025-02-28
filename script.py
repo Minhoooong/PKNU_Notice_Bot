@@ -148,14 +148,33 @@ async def extract_content(url):
         paragraphs = soup.find_all('p')
         text = ' '.join([para.get_text() for para in paragraphs])
 
-        # Extract images
+        # Extract images and convert to absolute URLs
         images = soup.find_all('img')
-        image_urls = [img['src'] for img in images if 'src' in img.attrs]
+        image_urls = []
+        for img in images:
+            src = img.get('src')
+            if src:
+                if not src.startswith(('http://', 'https://')):
+                    src = urllib.parse.urljoin(url, src)
+                # Check if the image URL is valid
+                if await is_valid_url(src):
+                    image_urls.append(src)
 
         return text, image_urls
     except Exception as e:
         logging.error(f"❌ Failed to fetch content from {url}: {e}")
         return "", []
+
+# 이미지 URL 유효성 검사 함수
+async def is_valid_url(url):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.head(url, timeout=10) as response:
+                if response.status == 200:
+                    return True
+    except Exception as e:
+        logging.error(f"❌ Invalid image URL: {url}, error: {e}")
+    return False
 
 # 이미지 분석 처리
 async def analyze_image(image_url):
