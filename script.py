@@ -6,7 +6,6 @@ from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, CallbackQuery
-from transformers import PreTrainedTokenizerFast, BartForConditionalGeneration
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -21,13 +20,15 @@ import urllib.parse
 import kss
 
 # "EbanLee/kobart-summary-v3" 모델 사용
+from transformers import PreTrainedTokenizerFast, BartForConditionalGeneration
+
 MODEL_NAME = "EbanLee/kobart-summary-v3"
 tokenizer = PreTrainedTokenizerFast.from_pretrained(MODEL_NAME)
 model = BartForConditionalGeneration.from_pretrained(MODEL_NAME)
 
 # 로깅 설정
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler("logfile.log"),
@@ -94,13 +95,11 @@ async def get_school_notices(category=""):
         category_url = f"{URL}?cd={category}" if category else URL
         html_content = await fetch_url(category_url)
         soup = BeautifulSoup(html_content, 'html.parser')
-
         notices = []
         for tr in soup.find_all("tr"):
             title_td = tr.find("td", class_="bdlTitle")
             user_td = tr.find("td", class_="bdlUser")
             date_td = tr.find("td", class_="bdlDate")
-
             if title_td and title_td.find("a") and user_td and date_td:
                 a_tag = title_td.find("a")
                 title = a_tag.get_text(strip=True)
@@ -111,36 +110,22 @@ async def get_school_notices(category=""):
                     href = BASE_URL + "/main/163" + href
                 elif not href.startswith("http"):
                     href = BASE_URL + "/" + href
-
                 department = user_td.get_text(strip=True)
                 date = date_td.get_text(strip=True)
                 notices.append((title, href, department, date))
-
         notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
         return notices
     except Exception as e:
         logging.exception("❌ Error in get_school_notices")
         return []
 
-# --- 불필요한 하단 문구 제거 ---
-def filter_footer(text):
-    # 사용자 제공 문자열과 정확히 일치하도록 설정
-    footer = (
-        "대연캠퍼스(48513) 부산광역시 남구 용소로 45 TEL : 051-629-4114 FAX : 051-629-4119 "
-        "용당캠퍼스(48547) 부산광역시 남구 신선로 365 TEL : 051-629-4114 FAX : 051-629-6040 "
-        "COPYRIGHT(C) 2021 PUKYONG NATIONAL UNIVERSITY. ALL RIGHTS RESERVED."
-    )
-    return text.replace(footer, "").strip()
-
-# --- 텍스트 요약 ---
+# --- 텍스트 요약 (재요약 단계 포함) ---
 def summarize_text(text):
     try:
         if len(text.split()) < 50:
             return text
-        
-        text = filter_footer(text)
+        # 문장 분할
         sentences = kss.split_sentences(text)
-        
         chunks = []
         current_chunk = ""
         for sentence in sentences:
@@ -154,10 +139,9 @@ def summarize_text(text):
                 current_chunk = new_chunk
         if current_chunk.strip():
             chunks.append(current_chunk.strip())
-        
         logging.info(f"생성된 청크 개수: {len(chunks)}")
-        
-        summaries = []
+        # 각 청크별 요약 수행
+        chunk_summaries = []
         for chunk in chunks:
             inputs = tokenizer(chunk, return_tensors="pt", padding="max_length", truncation=True, max_length=1026)
             summary_ids = model.generate(
@@ -173,60 +157,56 @@ def summarize_text(text):
                 no_repeat_ngram_size=15,
             )
             summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
-            summaries.append(summary_text if summary_text else chunk)
-        combined_summary = " ".join(summaries).strip()
-        
-        if not combined_summary:
-            return text
-        
-        final_tokens = tokenizer.encode(combined_summary, truncation=False)
-        if len(final_tokens) > 1024:
-            inputs = tokenizer(combined_summary, return_tensors="pt", padding="max_length", truncation=True, max_length=1026)
-            final_result = model.generate(
-                input_ids=inputs["input_ids"],
-                attention_mask=inputs["attention_mask"],
-                bos_token_id=model.config.bos_token_id,
-                eos_token_id=model.config.eos_token_id,
-                length_penalty=1.0,
-                max_length=70,
-                min_length=30,
-                num_beams=6,
-                repetition_penalty=1.5,
-                no_repeat_ngram_size=15,
-            )
-            final_summary = tokenizer.decode(final_result[0], skip_special_tokens=True)
-            return final_summary if final_summary else combined_summary
-        else:
-            return combined_summary
+            chunk_summaries.append(summary_text if summary_text else chunk)
+        # 재요약: 청크 요약 결과들을 줄바꿈으로 연결 후 재요약 처리
+        combined_summary_text = "\n".join(chunk_summaries).strip()
+        inputs = tokenizer(combined_summary_text, return_tensors="pt", padding="max_length", truncation=True, max_length=1026)
+        final_summary_ids = model.generate(
+            input_ids=inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
+            bos_token_id=model.config.bos_token_id,
+            eos_token_id=model.config.eos_token_id,
+            length_penalty=1.0,
+            max_length=70,
+            min_length=30,
+            num_beams=6,
+            repetition_penalty=1.5,
+            no_repeat_ngram_size=15,
+        )
+        final_summary = tokenizer.decode(final_summary_ids[0], skip_special_tokens=True)
+        return final_summary if final_summary else combined_summary_text
     except Exception as e:
         logging.error(f"Summarization error: {e}")
         return text
 
-# --- 콘텐츠 추출 (텍스트 요약 및 이미지 크롤링) ---
+# --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 --- 
 async def extract_content(url):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=10) as response:
                 html_content = await response.text()
-
         soup = BeautifulSoup(html_content, 'html.parser')
-        paragraphs = soup.find_all('p')
-        raw_text = ' '.join([para.get_text() for para in paragraphs])
-        summary_text = summarize_text(raw_text)
-
-        # 이미지 URL 추출: /upload/가 포함된 URL만 사용
-        images = soup.find_all('img')
+        # bdvTxt_wrap 영역에서 데이터 추출
+        container = soup.find("div", class_="bdvTxt_wrap")
+        if not container:
+            container = soup
+        # 먼저 텍스트와 이미지를 모두 추출
+        paragraphs = container.find_all('p')
+        raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
+        images = container.find_all('img')
         image_urls = []
         for img in images:
             src = img.get('src')
             if src:
                 if not src.startswith(('http://', 'https://')):
                     src = urllib.parse.urljoin(url, src)
-                # /upload/가 없는 이미지는 제외
+                # /upload/ 경로가 포함된 이미지 URL만 사용
                 if "/upload/" not in src:
                     continue
                 if await is_valid_url(src):
                     image_urls.append(src)
+        # 그 후 텍스트 요약 수행
+        summary_text = summarize_text(raw_text)
         return summary_text, image_urls
     except Exception as e:
         logging.error(f"❌ Failed to fetch content from {url}: {e}")
