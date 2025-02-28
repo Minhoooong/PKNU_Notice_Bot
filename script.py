@@ -222,7 +222,7 @@ def summarize_text(text):
     combined_text = " ".join(key_sentences)
 
     try:
-        inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+        inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=False)
         summary_ids = model.generate(
             input_ids=inputs["input_ids"],
             attention_mask=inputs["attention_mask"],
