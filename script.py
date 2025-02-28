@@ -22,8 +22,8 @@ import kss
 # 한국어 요약을 위해 transformers의 pipeline과 tokenizer 불러오기
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 
-# SKT/Korean-T5 모델 (또는 파인튜닝된 모델) 사용
-MODEL_NAME = "SKT/Korean-T5-base"  # 필요시 파인튜닝 모델 이름으로 변경
+# SKT/Korean-T5 모델 (파인튜닝된 모델이 있다면 해당 모델 이름으로 변경)
+MODEL_NAME = "skt/korean-t5-base"  # 수정: 소문자 사용
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
 summarizer = pipeline("summarization", model=model, tokenizer=tokenizer)
@@ -199,7 +199,6 @@ async def extract_content(url):
             if src:
                 if not src.startswith(('http://', 'https://')):
                     src = urllib.parse.urljoin(url, src)
-                # is_valid_url 체크를 통해 유효한 이미지 URL만 사용
                 if await is_valid_url(src):
                     image_urls.append(src)
         return summary_text, image_urls
@@ -267,7 +266,6 @@ async def send_notification(notice):
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
     message_text += f"{html.escape(summary_text)}"
-    # 이미지 URL이 있을 경우, 텍스트 뒤에 이미지 링크 추가 (여러 이미지일 경우 개행으로 구분)
     if image_urls:
         message_text += "\n\n[첨부 이미지]\n" + "\n".join(image_urls)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
