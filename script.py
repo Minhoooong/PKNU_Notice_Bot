@@ -10,47 +10,40 @@ from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from google.cloud import vision
+from google.oauth2 import service_account
 import json
 import os
 import subprocess
 import html
 from datetime import datetime
 import urllib.parse
-import tempfile
 
 # 로깅 설정 (최초에 설정)
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.FileHandler("logfile.log"),
-                        logging.StreamHandler()
-                    ])
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("logfile.log"),
+        logging.StreamHandler()
+    ]
+)
 
-# 환경 변수에서 JSON 파일 내용 가져오기 (Base64 인코딩 없이)
+# 환경 변수에서 JSON 문자열 읽어오기 (임시 파일 생성 없이)
 credentials_content = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_CONTENT")
 if not credentials_content:
     logging.error("❌ GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수가 설정되지 않았습니다.")
     raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수가 설정되지 않았습니다.")
 
 try:
-    # JSON 문자열 그대로 임시 파일로 저장
-    with tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8") as temp_file:
-         temp_file.write(credentials_content)
-         temp_credentials_path = temp_file.name
+    # JSON 문자열 파싱하여 딕셔너리로 변환
+    service_account_info = json.loads(credentials_content)
+except json.JSONDecodeError as e:
+    logging.error(f"❌ JSON 파싱 오류 발생: {e}")
+    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수의 JSON 형식이 올바르지 않습니다.")
 
-    # JSON 파싱 테스트
-    with open(temp_credentials_path, "r", encoding="utf-8") as f:
-         json.load(f)
-    logging.info("✅ GOOGLE_APPLICATION_CREDENTIALS JSON 파일이 정상적으로 로드되었습니다.")
-except Exception as e:
-    logging.error(f"❌ JSON 파일 처리 오류: {e}")
-    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수 오류 발생")
-
-# GOOGLE_APPLICATION_CREDENTIALS 환경 변수에 임시 파일 경로 설정
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_credentials_path
-
-# Google Cloud Vision API 클라이언트 초기화
-client = vision.ImageAnnotatorClient()
+# credentials 객체 생성 후 Google Cloud Vision API 클라이언트 초기화
+credentials = service_account.Credentials.from_service_account_info(service_account_info)
+client = vision.ImageAnnotatorClient(credentials=credentials)
 logging.info("✅ Google Cloud Vision API 인증 성공!")
 
 # 상수 정의
@@ -111,7 +104,7 @@ async def fetch_url(url):
 async def get_school_notices(category=""):
     try:
         category_url = f"{URL}?cd={category}" if category else URL
-        html_content = await fetch_url(category_url)  # ✅ 비동기 요청
+        html_content = await fetch_url(category_url)
         soup = BeautifulSoup(html_content, 'html.parser')
 
         notices = []
@@ -142,7 +135,7 @@ async def get_school_notices(category=""):
         logging.exception("❌ Error in get_school_notices")
         return []
 
-# URL내 이미지 추출
+# URL 내 이미지 및 텍스트 추출
 async def extract_content(url):
     try:
         async with aiohttp.ClientSession() as session:
@@ -163,7 +156,6 @@ async def extract_content(url):
             if src:
                 if not src.startswith(('http://', 'https://')):
                     src = urllib.parse.urljoin(url, src)
-                # 이미지 URL 유효성 검사
                 if await is_valid_url(src):
                     image_urls.append(src)
 
@@ -193,18 +185,18 @@ async def analyze_image(image_url):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(image_url, timeout=10) as response:
-                image_content = await response.read()  # ✅ 비동기적으로 이미지 다운로드
+                image_content = await response.read()
 
         image = vision.Image(content=image_content)
 
         # Text detection
-        response = client.text_detection(image=image)
-        texts = response.text_annotations
+        response_text = client.text_detection(image=image)
+        texts = response_text.text_annotations
         text_analysis = [text.description for text in texts]
 
         # Label detection
-        response = client.label_detection(image=image)
-        labels = response.label_annotations
+        response_label = client.label_detection(image=image)
+        labels = response_label.label_annotations
         label_analysis = [label.description for label in labels]
 
         return text_analysis, label_analysis
@@ -219,7 +211,7 @@ async def check_for_new_notices():
     seen_announcements = load_seen_announcements()
     logging.info(f"Loaded seen announcements: {seen_announcements}")
 
-    current_notices = await get_school_notices()  # ✅ 비동기 함수 호출
+    current_notices = await get_school_notices()
     logging.info(f"Fetched current notices: {current_notices}")
 
     seen_titles_urls = {(title, url) for title, url, *_ in seen_announcements}
@@ -238,7 +230,7 @@ async def check_for_new_notices():
         logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
     else:
         logging.info("✅ 새로운 공지사항이 없습니다.")
-        
+
 # GitHub Push (PAT 예외 처리 추가)
 def push_changes():
     try:
@@ -272,10 +264,8 @@ async def manual_check_notices(message: types.Message):
 async def send_notification(notice):
     title, href, department, date = notice
     
-    # ✅ 'await' 사용하여 실행 결과 가져오기
     text, image_urls = await extract_content(href)
     
-    # 메시지 준비
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n{html.escape(text)}"
     
@@ -291,7 +281,8 @@ async def send_notification(notice):
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"), InlineKeyboardButton(text="📢전체 공지사항", callback_data="all_notices")]
+        [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"),
+         InlineKeyboardButton(text="📢전체 공지사항", callback_data="all_notices")]
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
@@ -306,7 +297,8 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "all_notices")
 async def callback_all_notices(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=category, callback_data=f"category_{code}")] for category, code in CATEGORY_CODES.items()
+        [InlineKeyboardButton(text=category, callback_data=f"category_{code}")]
+         for category, code in CATEGORY_CODES.items()
     ])
     await callback.message.answer("원하는 카테고리를 선택하세요:", reply_markup=keyboard)
     await state.set_state(FilterState.selecting_category)
@@ -375,9 +367,6 @@ async def run_bot():
     finally:
         await bot.session.close()
         logging.info("✅ Bot session closed.")
-
-# 임시 파일 삭제
-os.remove(temp_credentials_path)
 
 if __name__ == '__main__':
     if sys.platform.startswith("win"):
