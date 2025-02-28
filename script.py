@@ -17,7 +17,12 @@ from datetime import datetime
 import urllib.parse
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler("logfile.log"),
+                        logging.StreamHandler()
+                    ])
 
 # 상수 정의
 URL = 'https://www.pknu.ac.kr/main/163'
@@ -80,7 +85,6 @@ def save_seen_announcements(seen):
     except Exception as e:
         logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
 
-
 # 공지사항 크롤링 (URL 처리 개선)
 def get_school_notices(category=""):
     try:
@@ -121,7 +125,7 @@ def get_school_notices(category=""):
         logging.exception("Error in get_school_notices")
         return []
 
-#URL내 이미지 추출
+# URL내 이미지 추출
 def extract_content(url):
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
