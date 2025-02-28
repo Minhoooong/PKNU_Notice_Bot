@@ -243,7 +243,7 @@ def summarize_text(text):
 async def extract_content(url):
     try:
         html_content = await fetch_url(url)
-        if html_content is None:  # ✅ fetch_url()이 None을 반환하면 빈 문자열 처리
+        if html_content is None:
             logging.error(f"❌ Failed to fetch content: {url}")
             return " ", []
 
@@ -255,10 +255,21 @@ async def extract_content(url):
         paragraphs = container.find_all('p')
         raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
 
-        summary_text = summarize_text(raw_text)
-        if summary_text is None:  # ✅ summary_text가 None이면 빈 문자열 반환
-            logging.error(f"❌ Failed to summarize content: {url}")
-            return " ", []
+        # raw_text를 요약하기 전에 검증합니다.
+        if raw_text.strip():
+            summary_text = summarize_text(raw_text)
+            if summary_text is None:
+                logging.error(f"❌ Failed to summarize content: {url}")
+                summary_text = " "
+        else:
+            summary_text = " "
+
+        images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if "/upload/" in img['src']]
+        return summary_text, images
+
+    except Exception as e:
+        logging.error(f"❌ Exception in extract_content: {e}")
+        return " ", []
 
         images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if "/upload/" in img['src']]
         return summary_text, images
