@@ -18,6 +18,11 @@ jobs:
         with:
           python-version: '3.8'
 
+      - name: Install system dependencies (mecab)
+        run: |
+          sudo apt update
+          sudo apt install -y mecab libmecab-dev mecab-ipadic-utf8
+
       - name: Cache pip dependencies
         uses: actions/cache@v3
         with:
