@@ -9,8 +9,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-from google.cloud import vision
-from google.oauth2 import service_account
 import json
 import os
 import subprocess
@@ -39,28 +37,6 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-
-# --- Google Cloud 인증 정보 로드 ---
-credentials_content = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_CONTENT")
-if not credentials_content:
-    credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
-    if credentials_path and os.path.exists(credentials_path):
-        with open(credentials_path, "r", encoding="utf-8") as f:
-            credentials_content = f.read()
-
-if not credentials_content:
-    logging.error("❌ Google Cloud credentials are not provided!")
-    raise ValueError("Google Cloud credentials are not provided.")
-
-try:
-    service_account_info = json.loads(credentials_content)
-except json.JSONDecodeError as e:
-    logging.error(f"❌ JSON parsing error: {e}")
-    raise ValueError("Google Cloud credentials JSON format error")
-
-credentials = service_account.Credentials.from_service_account_info(service_account_info)
-client = vision.ImageAnnotatorClient(credentials=credentials)
-logging.info("✅ Google Cloud Vision API 인증 성공!")
 
 # --- 상수 및 환경 변수 ---
 URL = 'https://www.pknu.ac.kr/main/163'
@@ -182,7 +158,6 @@ def summarize_text(text):
         logging.info(f"생성된 청크 개수: {len(chunks)}")
         
         summaries = []
-        # 요약 파라미터는 도메인 특성에 맞게 조정 (예: max_length=70, min_length=30)
         for chunk in chunks:
             result = summarizer(chunk, max_length=70, min_length=30, do_sample=False)
             summary_text = result[0].get('summary_text', '').strip()
@@ -216,6 +191,7 @@ async def extract_content(url):
         raw_text = ' '.join([para.get_text() for para in paragraphs])
         summary_text = summarize_text(raw_text)
 
+        # 이미지 URL 추출 (이미지 분석 없이 URL 그대로 반환)
         images = soup.find_all('img')
         image_urls = []
         for img in images:
@@ -223,6 +199,7 @@ async def extract_content(url):
             if src:
                 if not src.startswith(('http://', 'https://')):
                     src = urllib.parse.urljoin(url, src)
+                # is_valid_url 체크를 통해 유효한 이미지 URL만 사용
                 if await is_valid_url(src):
                     image_urls.append(src)
         return summary_text, image_urls
@@ -290,6 +267,9 @@ async def send_notification(notice):
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
     message_text += f"{html.escape(summary_text)}"
+    # 이미지 URL이 있을 경우, 텍스트 뒤에 이미지 링크 추가 (여러 이미지일 경우 개행으로 구분)
+    if image_urls:
+        message_text += "\n\n[첨부 이미지]\n" + "\n".join(image_urls)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
