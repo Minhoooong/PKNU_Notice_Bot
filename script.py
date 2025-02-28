@@ -18,12 +18,13 @@ import html
 from datetime import datetime
 import urllib.parse
 
-# Transformers summarization pipeline 및 tokenizer 불러오기
+# 한국어 요약을 위해 transformers의 pipeline과 tokenizer 불러오기
 from transformers import pipeline, AutoTokenizer
-tokenizer = AutoTokenizer.from_pretrained("sshleifer/distilbart-cnn-12-6")
-summarizer = pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+# gogamza/kobart-summarization 모델 사용 (무료, 오픈소스)
+tokenizer = AutoTokenizer.from_pretrained("gogamza/kobart-summarization")
+summarizer = pipeline("summarization", model="gogamza/kobart-summarization")
 
-# 로깅 설정 (최초에 설정)
+# 로깅 설정
 logging.basicConfig(
     level=logging.INFO, 
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -33,7 +34,7 @@ logging.basicConfig(
     ]
 )
 
-# --- Google Cloud 인증 정보 로드 --- #
+# --- Google Cloud 인증 정보 로드 ---
 credentials_content = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_CONTENT")
 if not credentials_content:
     credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
@@ -55,7 +56,7 @@ credentials = service_account.Credentials.from_service_account_info(service_acco
 client = vision.ImageAnnotatorClient(credentials=credentials)
 logging.info("✅ Google Cloud Vision API 인증 성공!")
 
-# --- 상수 및 환경 변수 --- #
+# --- 상수 및 환경 변수 ---
 URL = 'https://www.pknu.ac.kr/main/163'
 BASE_URL = 'https://www.pknu.ac.kr'
 CATEGORY_CODES = {
@@ -69,16 +70,16 @@ CATEGORY_CODES = {
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')
 
-# --- 봇 및 Dispatcher 초기화 --- #
+# --- 봇 및 Dispatcher 초기화 ---
 bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher(bot=bot)
 
-# --- FSM 상태 정의 --- #
+# --- FSM 상태 정의 ---
 class FilterState(StatesGroup):
     waiting_for_date = State()
     selecting_category = State()
 
-# --- 날짜 파싱 함수 --- #
+# --- 날짜 파싱 함수 ---
 def parse_date(date_str):
     try:
         return datetime.strptime(date_str, "%Y-%m-%d")
@@ -86,7 +87,7 @@ def parse_date(date_str):
         logging.error(f"Date parsing error for {date_str}: {ve}")
         return None
 
-# --- JSON 파일 처리 (공지사항 중복 체크) --- #
+# --- JSON 파일 처리 (공지사항 중복 체크) ---
 def load_seen_announcements():
     try:
         with open("announcements_seen.json", "r", encoding="utf-8") as f:
@@ -103,7 +104,7 @@ def save_seen_announcements(seen):
     except Exception as e:
         logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
 
-# --- 공지사항 크롤링 --- #
+# --- 공지사항 크롤링 ---
 async def fetch_url(url):
     async with aiohttp.ClientSession() as session:
         async with session.get(url, timeout=10) as response:
@@ -142,14 +143,14 @@ async def get_school_notices(category=""):
         logging.exception("❌ Error in get_school_notices")
         return []
 
-# --- 웹페이지 텍스트 추출 및 요약 --- #
+# --- 웹페이지 텍스트 추출 및 한국어 요약 ---
 def summarize_text(text):
     try:
         # 텍스트가 너무 짧으면 요약하지 않고 원본 반환
         if len(text.split()) < 50:
             return text
         
-        # 토크나이저를 사용하여 최대 1024 토큰으로 자르기
+        # 토크나이저를 사용하여 최대 1024 토큰으로 자르기 (모델의 입력 제한 고려)
         tokens = tokenizer.encode(text, truncation=True, max_length=1024)
         truncated_text = tokenizer.decode(tokens, skip_special_tokens=True)
         
@@ -170,7 +171,7 @@ async def extract_content(url):
         raw_text = ' '.join([para.get_text() for para in paragraphs])
         summary_text = summarize_text(raw_text)
 
-        # 이미지 추출 (필요하다면 사용)
+        # 이미지 추출 (필요 시 활용)
         images = soup.find_all('img')
         image_urls = []
         for img in images:
@@ -185,7 +186,7 @@ async def extract_content(url):
         logging.error(f"❌ Failed to fetch content from {url}: {e}")
         return "", []
 
-# --- 이미지 URL 유효성 검사 --- #
+# --- 이미지 URL 유효성 검사 ---
 async def is_valid_url(url):
     try:
         async with aiohttp.ClientSession() as session:
@@ -195,7 +196,7 @@ async def is_valid_url(url):
         logging.error(f"❌ Invalid image URL: {url}, error: {e}")
     return False
 
-# --- 새로운 공지사항 확인 및 알림 전송 --- #
+# --- 새로운 공지사항 확인 및 알림 전송 ---
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
     
@@ -221,7 +222,7 @@ async def check_for_new_notices():
     else:
         logging.info("✅ 새로운 공지사항이 없습니다.")
 
-# --- GitHub Push (PAT 예외 처리) --- #
+# --- GitHub Push (PAT 예외 처리) ---
 def push_changes():
     try:
         pat = os.environ.get("MY_PAT")
@@ -241,7 +242,7 @@ def push_changes():
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
 
-# --- 수동 공지사항 확인 명령어 --- #
+# --- 수동 공지사항 확인 명령어 ---
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message):
     new_notices = await check_for_new_notices()
@@ -250,7 +251,7 @@ async def manual_check_notices(message: types.Message):
     else:
         await message.answer("✅ 새로운 공지사항이 없습니다.")
 
-# --- 알림 전송 --- #
+# --- 알림 전송 ---
 async def send_notification(notice):
     title, href, department, date = notice
     summary_text, image_urls = await extract_content(href)
@@ -262,7 +263,7 @@ async def send_notification(notice):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-# --- /start 명령어 처리 --- #
+# --- /start 명령어 처리 ---
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -271,14 +272,14 @@ async def start_command(message: types.Message):
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
-# --- 날짜 입력 요청 처리 --- #
+# --- 날짜 입력 요청 처리 ---
 @dp.callback_query(F.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
     await callback.answer()
 
-# --- 전체 공지사항 버튼 클릭 시 카테고리 선택 --- #
+# --- 전체 공지사항 버튼 클릭 시 카테고리 선택 ---
 @dp.callback_query(F.data == "all_notices")
 async def callback_all_notices(callback: CallbackQuery, state: FSMContext):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -289,7 +290,7 @@ async def callback_all_notices(callback: CallbackQuery, state: FSMContext):
     await state.set_state(FilterState.selecting_category)
     await callback.answer()
 
-# --- 카테고리 선택 시 해당 공지사항 가져오기 --- #
+# --- 카테고리 선택 시 해당 공지사항 가져오기 ---
 @dp.callback_query(F.data.startswith("category_"))
 async def callback_category_selection(callback: CallbackQuery, state: FSMContext):
     category_code = callback.data.split("_")[1]
@@ -302,7 +303,7 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
     await state.clear()
     await callback.answer()
 
-# --- 날짜 입력 처리 --- #
+# --- 날짜 입력 처리 ---
 @dp.message(F.text)
 async def process_date_input(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
@@ -336,7 +337,7 @@ async def process_date_input(message: types.Message, state: FSMContext):
     logging.info("Clearing FSM state.")
     await state.clear()
 
-# --- 봇 실행 (10분 동안 폴링 후 종료) --- #
+# --- 봇 실행 (10분 동안 폴링 후 종료) ---
 async def run_bot():
     try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
