@@ -121,32 +121,57 @@ def extract_key_sentences(text, top_n=5):
 
 def summarize_paragraphs(text):
     """
-    문단 단위로 요약하는 대신, 중요 문장을 먼저 추출한 후 요약.
+    문단 단위로 요약 후 최종 요약을 수행하는 함수
     """
-    paragraphs = text.split("\n")  # 문단 분리
-    cleaned_paragraphs = [" ".join(kss.split_sentences(para)) for para in paragraphs if para.strip()]
+    # 공백 및 빈 문단 제거
+    paragraphs = [para.strip() for para in text.split("\n") if para.strip()]
     
-    # 문단별 중요 문장 추출
-    key_sentences = []
-    for para in cleaned_paragraphs:
-        key_sentences.extend(extract_key_sentences(para, top_n=3))
+    # 요약할 내용이 없으면 원본 반환
+    if not paragraphs or len(paragraphs) == 0:
+        logging.warning("❌ 요약할 내용이 없음, 원본 반환")
+        return text  
 
-    # 요약 모델 적용
-    full_text = " ".join(key_sentences)
-    inputs = tokenizer(full_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+    summarized_paragraphs = []
     
-    summary_ids = model.generate(
+    for para in paragraphs:
+        # 문장이 일정 길이 이하이면 요약하지 않고 그대로 추가
+        if len(para.split()) < 20:
+            summarized_paragraphs.append(para)
+            continue
+        
+        inputs = tokenizer(para, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+        summary_ids = model.generate(
+            input_ids=inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
+            num_beams=6,
+            length_penalty=1.0,
+            max_length=100,
+            min_length=30,
+            repetition_penalty=1.5,
+            no_repeat_ngram_size=15,
+        )
+        summary_text = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+        summarized_paragraphs.append(summary_text)
+
+    # 문단별 요약을 결합한 후 최종적으로 다시 한 번 요약
+    final_text = " ".join(summarized_paragraphs)
+
+    # 최종 요약 수행 (최소 길이 조건 추가)
+    if len(final_text.split()) < 20:
+        return final_text
+
+    inputs = tokenizer(final_text, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+    final_summary_ids = model.generate(
         input_ids=inputs["input_ids"],
         attention_mask=inputs["attention_mask"],
         num_beams=6,
         length_penalty=1.0,
-        max_length=100,  # 적절한 요약 길이 조절
+        max_length=100,
         min_length=30,
         repetition_penalty=1.5,
         no_repeat_ngram_size=15,
     )
-    
-    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    return tokenizer.decode(final_summary_ids[0], skip_special_tokens=True)
 
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
