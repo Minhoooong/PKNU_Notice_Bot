@@ -173,11 +173,9 @@ async def send_notification(notice):
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="날짜 입력", callback_data="filter_date")],
-        [InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
-    ]
-    reply_markup = ([keyboard])
-    await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:"
+        [InlineKeyboardButton(text="날짜 입력", callback_data="filter_date"), InlineKeyboardButton(text="전체 공지사항", callback_data="all_notices")]
+    ])
+    await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
 # 날짜 입력 요청 처리
 @dp.callback_query(F.data == "filter_date")
