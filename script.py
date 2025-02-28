@@ -18,6 +18,7 @@ import html
 from datetime import datetime
 import urllib.parse
 import tempfile
+import base64
 
 
 # 환경 변수에서 JSON 파일 내용 가져오기
@@ -26,6 +27,24 @@ credentials_content = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_CONTENT")
 if not credentials_content:
     logging.error("❌ GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수가 설정되지 않았습니다.")
     raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수가 설정되지 않았습니다.")
+
+try:
+    # Base64로 인코딩된 JSON 파일을 디코딩
+    decoded_credentials = base64.b64decode(credentials_content).decode("utf-8")
+
+    # 임시 파일로 저장
+    with tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8") as temp_file:
+        temp_file.write(decoded_credentials)
+        temp_credentials_path = temp_file.name
+
+    logging.info("✅ GOOGLE_APPLICATION_CREDENTIALS JSON 파일이 정상적으로 로드되었습니다.")
+except Exception as e:
+    logging.error(f"❌ JSON 파일 디코딩 실패: {e}")
+    raise ValueError("GOOGLE_APPLICATION_CREDENTIALS_CONTENT 환경 변수 디코딩 오류 발생")
+
+# Google Cloud Vision API 클라이언트 초기화
+client = vision.ImageAnnotatorClient()
+logging.info("✅ Google Cloud Vision API 인증 성공!")
 
 # 임시 파일 생성 및 JSON 내용 쓰기
 with tempfile.NamedTemporaryFile(delete=False) as temp_file:
