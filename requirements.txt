@@ -6,3 +6,4 @@ kss
 aiohttp
 scikit-learn
 konlpy
+eunjeon
