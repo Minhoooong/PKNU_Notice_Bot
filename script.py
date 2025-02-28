@@ -92,20 +92,24 @@ def parse_date(date_str):
         logging.error(f"Date parsing error for {date_str}: {ve}")
         return None
 
-# --- HTTP 요청 함수 (fetch_url) ---
-session = aiohttp.ClientSession()  # ✅ 전역 세션 생성
+async def fetch_all_urls(urls, max_concurrent_requests=5):
+    """ 여러 개의 URL을 병렬적으로 요청하는 함수 """
+    connector = aiohttp.TCPConnector(limit_per_host=max_concurrent_requests)  # ✅ 동시 요청 개수 제한
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks = [fetch_url_with_session(session, url) for url in urls]
+        return await asyncio.gather(*tasks)
 
-async def fetch_url(url):
-    async with aiohttp.ClientSession() as session:  # 함수 내에서 세션 생성
-        try:
-            async with session.get(url, timeout=10) as response:
-                if response.status != 200:
-                    logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
-                    return None
-                return await response.text()
-        except Exception as e:
-            logging.error(f"❌ URL 요청 오류: {url}, {e}")
-            return None
+async def fetch_url_with_session(session, url):
+    """ 요청마다 새로운 세션을 생성하지 않도록 별도 함수 분리 """
+    try:
+        async with session.get(url, timeout=10) as response:
+            if response.status != 200:
+                logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
+                return None
+            return await response.text()
+    except Exception as e:
+        logging.error(f"❌ URL 요청 오류: {url}, {e}")
+        return None
 
 # --- 공지사항 크롤링 ---
 async def get_school_notices(category=""):
