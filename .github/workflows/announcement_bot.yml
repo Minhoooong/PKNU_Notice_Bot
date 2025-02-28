@@ -21,19 +21,30 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
 
+    - name: Debug Google Cloud Secrets
+      run: |
+        if [ -z "${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}" ]; then
+          echo "❌ GOOGLE_APPLICATION_CREDENTIALS_CONTENT is empty!"
+          exit 1
+        else
+          echo "✅ GOOGLE_APPLICATION_CREDENTIALS_CONTENT is set."
+        fi
+
     - name: Setup Google Cloud Credentials
       env:
         GOOGLE_APPLICATION_CREDENTIALS_CONTENT: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_CONTENT }}
       run: |
         echo "$GOOGLE_APPLICATION_CREDENTIALS_CONTENT" | base64 --decode > /tmp/gcloud.json
+        ls -lah /tmp/gcloud.json
         echo "✅ Google Cloud Credentials saved successfully."
-
+    
     - name: Verify Google Cloud Credentials File
       run: |
         if [ -s /tmp/gcloud.json ]; then
           echo "✅ Google Cloud Credentials file exists."
         else
           echo "❌ Google Cloud Credentials file is empty!"
+          cat /tmp/gcloud.json  # JSON 파일 내용 출력 (디버깅용)
           exit 1
         fi
 
