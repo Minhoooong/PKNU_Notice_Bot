@@ -147,12 +147,12 @@ async def get_school_notices(category=""):
 
 # --- 푸터 제거: 불필요한 정보 필터링 ---
 def filter_footer(text):
-    keywords = ["TEL", "FAX", "COPYRIGHT", "캠퍼스", "부산광역시"]
-    filtered_lines = []
-    for line in text.splitlines():
-        if not any(keyword in line for keyword in keywords):
-            filtered_lines.append(line)
-    return " ".join(filtered_lines)
+    # 고정된 불필요한 하단 정보
+    footer = ("대연캠퍼스(48513) 부산광역시 남구 용소로 45 TEL : 051-629-4114 FAX : 051-629-4114 " 
+              "FAX : 051-629-5119 용당캠퍼스(48547) 부산광역시 남구 신선로 365 TEL : 051-629-4114 "
+              "FAX : 051-629-6040 COPYRIGHT(C) 2021 PUKYONG NATIONAL UNIVERSITY. ALL RIGHTS RESERVED.")
+    # footer가 text에 있으면 제거
+    return text.replace(footer, "").strip()
 
 # --- 텍스트 요약: 문장 단위 청크로 분할 후 요약 ---
 def summarize_text(text):
