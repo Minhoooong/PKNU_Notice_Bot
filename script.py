@@ -1,10 +1,8 @@
 import traceback
 import logging
 import asyncio
-import sys
 import aiohttp
 from bs4 import BeautifulSoup
-from collections import OrderedDict
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, CallbackQuery
@@ -13,7 +11,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 import json
 import os
-import subprocess
 import html
 from datetime import datetime
 import urllib.parse
@@ -194,33 +191,6 @@ def text_rank_key_sentences(text, top_n=5):
 
     return [s for _, s in ranked_sentences[:top_n]] if ranked_sentences else sentences[:top_n]
 
-def clean_and_format_text(text):
-    """
-    - 중복 단어 및 반복된 표현 제거
-    - 문장 마침표 추가
-    - 리스트 형식으로 정리하여 가독성 향상
-    """
-    if not text.strip():
-        return text  # 빈 문자열이면 그대로 반환
-
-    # 1️⃣ 중복 단어 및 반복된 표현 제거 (정규식 대신 OrderedDict 활용)
-    words = text.split()
-    cleaned_words = list(OrderedDict.fromkeys(words))  # 중복 제거하면서 순서 유지
-    text = " ".join(cleaned_words)
-
-    # 2️⃣ 문장 마침표 보정
-    sentences = kss.split_sentences(text, backend="auto")  # 문장 분리
-    cleaned_sentences = []
-    for sentence in sentences:
-        if not sentence.endswith(('.', '!', '?', '"', "'")):
-            sentence += "."  # 문장 끝이 이상하면 마침표 추가
-        cleaned_sentences.append(sentence)
-
-    # 3️⃣ 리스트 형태 적용 (가독성 향상)
-    formatted_text = "\n".join(cleaned_sentences).strip()  # 불필요한 공백 제거
-
-    return formatted_text
-
 def extract_key_sentences(text, top_n=5):
     """
     중요 문장을 추출하는 함수.
@@ -303,15 +273,6 @@ async def extract_content(url):
         logging.error(f"❌ Exception in extract_content for URL {url}: {e}")
         return "처리 중 오류가 발생했습니다.", []
 
-async def is_valid_url(url):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.head(url, timeout=10) as response:
-                return response.status == 200
-    except Exception as e:
-        logging.error(f"❌ Invalid image URL: {url}, error: {e}")
-    return False
-
 # --- JSON 파일 처리 (공지사항 중복 체크) ---
 def load_seen_announcements():
     try:
@@ -328,22 +289,6 @@ def save_seen_announcements(seen):
         push_changes()
     except Exception as e:
         logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
-
-def push_changes():
-    try:
-        pat = os.environ.get("MY_PAT")
-        if not pat:
-            logging.error("❌ GitHub PAT가 설정되지 않았습니다. Push를 생략합니다.")
-            return
-        os.environ["GIT_ASKPASS"] = "echo"
-        os.environ["GIT_PASSWORD"] = pat
-        subprocess.run(["git", "config", "--global", "credential.helper", "store"], check=True)
-        subprocess.run(["git", "add", "announcements_seen.json"], check=True)
-        subprocess.run(["git", "commit", "-m", "Update announcements_seen.json"], check=True)
-        subprocess.run(["git", "push", "origin", "main"], check=True)
-        logging.info("✅ Successfully pushed changes to GitHub.")
-    except subprocess.CalledProcessError as e:
-        logging.error(f"❌ ERROR: Failed to push changes to GitHub: {e}")
 
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
