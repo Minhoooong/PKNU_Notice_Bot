@@ -168,9 +168,9 @@ async def summarize_text(text):
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=500  # ✅ 긴 텍스트 지원)
+            max_tokens=500
         )
-        return response["choices"][0]["message"]["content"].strip()
+        return response.choices[0].message.content.strip()
 
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}")
