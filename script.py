@@ -88,7 +88,6 @@ def is_new_announcement(title, href):
     save_cache(cache)
     return True  # 새로운 공지사항이면 True 반환
 
-
 # --- 날짜 파싱 함수 ---
 def parse_date(date_str):
     try:
