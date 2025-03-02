@@ -167,10 +167,12 @@ def summarize_text(text):
     prompt = f"다음 공지사항을 3~5 문장으로 간결하게 요약해줘:\n\n{text}\n\n요약:"
 
     try:
-        response = await aclient.chat.completions.create(model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3,
-        max_tokens=500  # ✅ 긴 텍스트 지원)
+        response = await aclient.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=500  # ✅ 긴 텍스트 지원)
+        )
         return response["choices"][0]["message"]["content"].strip()
 
     except Exception as e:
