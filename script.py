@@ -266,26 +266,31 @@ async def send_notification(notice):
     title, href, department, date = notice
     summary_text, image_urls = await extract_content(href)
 
-    # ✅ summary_text가 None이면 기본 메시지 사용
+    # summary_text가 None이면 기본 메시지 사용
     if summary_text is None:
         summary_text = ""
 
-    message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
-    message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
-    message_text += f"{html.escape(summary_text)}"
-   
-    # 텍스트 메시지 전송
-    await bot.send_message(chat_id=CHAT_ID, text=message_text)
+    message_text = (
+        f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
+        f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
+        f"{html.escape(summary_text)}"
+    )
+    
+    # 키보드 생성
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
+    )
+    
+    # 텍스트 메시지와 키보드를 함께 전송 (한 번만 전송)
+    await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
+    # 이미지가 있으면 이미지 전송 (필요시)
     if image_urls:
         for url in image_urls:
             try:
                 await bot.send_photo(chat_id=CHAT_ID, photo=url)
             except Exception as e:
                 logging.error(f"❌ 이미지 전송 오류: {url}, {e}")
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
-    await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
