@@ -161,7 +161,7 @@ async def summarize_text(text):
     if text is None or not text.strip():
         return "요약할 수 없는 공지입니다."
 
-    prompt = f"다음 공지사항을 3~5 문장으로 간결하게 요약해줘:\n\n{text}\n\n요약:"
+    prompt = f""아래의 텍스트를 3~5 문장으로 간결하고 명확하게 요약해 주세요. 요약문은 가독성이 뛰어나도록 각 핵심 사항을 별도의 문단이나 항목으로 구분하고, 불필요한 중복은 제거하며, 중요한 내용은 강조해서 표현해 주세요.":\n\n{text}\n\n요약:"
 
     try:
         response = await aclient.chat.completions.create(
@@ -268,9 +268,16 @@ async def send_notification(notice):
     message_text = f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
     message_text += f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
     message_text += f"{html.escape(summary_text)}"
+   
+    # 텍스트 메시지 전송
+    await bot.send_message(chat_id=CHAT_ID, text=message_text)
 
     if image_urls:
-        message_text += "\n\n[첨부 이미지]\n" + "\n".join(image_urls)
+        for url in image_urls:
+            try:
+                await bot.send_photo(chat_id=CHAT_ID, photo=url)
+            except Exception as e:
+                logging.error(f"❌ 이미지 전송 오류: {url}, {e}")
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
