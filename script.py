@@ -7,6 +7,7 @@ import traceback
 import sys
 import asyncio
 import urllib.parse
+import io
 from openai import AsyncOpenAI
 from aiogram import F  # F 필터 사용을 위해 추가
 from aiogram.types import ReplyKeyboardRemove  # ReplyKeyboardRemove 추가
@@ -258,12 +259,12 @@ async def send_notification(notice):
     if summary_text is None:
         summary_text = ""
 
-    # HTML 태그를 그대로 사용하기 위해 html.escape()를 제거합니다.
+    # 요약 텍스트를 HTML 이스케이프 처리한 후 이탤릭체로 표시
+    safe_summary = html.escape(summary_text)
     message_text = (
         f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
         f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
-        f"_________________________________________________________________\n"
-        f"{summary_text}"
+        f"<i>{safe_summary}</i>"
     )
     
     # 키보드 생성
@@ -274,11 +275,19 @@ async def send_notification(notice):
     # 텍스트 메시지와 키보드를 함께 전송 (HTML 모드가 적용되어 있음)
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-    # 이미지가 있으면 이미지 전송
+    # 이미지가 있으면 다운로드 후 전송
     if image_urls:
         for url in image_urls:
             try:
-                await bot.send_photo(chat_id=CHAT_ID, photo=url)
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            data = await resp.read()
+                            photo_bytes = io.BytesIO(data)
+                            photo_bytes.name = "image.jpg"  # 확장자에 맞게 지정
+                            await bot.send_photo(chat_id=CHAT_ID, photo=photo_bytes)
+                        else:
+                            logging.error(f"❌ 이미지 다운로드 실패: {url} (HTTP {resp.status})")
             except Exception as e:
                 logging.error(f"❌ 이미지 전송 오류: {url}, {e}")
 
