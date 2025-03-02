@@ -262,7 +262,8 @@ async def send_notification(notice):
     message_text = (
         f"[부경대 <b>{department}</b> 공지사항 업데이트]\n\n"
         f"<b>{title}</b>\n\n{date}\n\n"
-        f"<i>{summary_text}</i>"
+        f"_________________________________________________________________\n"
+        f"{summary_text}"
     )
     
     # 키보드 생성
