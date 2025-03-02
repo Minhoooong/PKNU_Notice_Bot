@@ -197,9 +197,10 @@ async def extract_content(url):
         raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
 
         if raw_text.strip():
-            summary_text = summarize_text(raw_text)  # ✅ GPT-4o Mini 사용
+            summary_text = await summarize_text(raw_text)  # await 추가
         else:
             summary_text = "본문이 없습니다."
+
 
         images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if "/upload/" in img['src']]
         return summary_text, images
