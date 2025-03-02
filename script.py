@@ -157,7 +157,7 @@ async def get_school_notices(category=""):
         return []
 
 # --- 텍스트 요약 ---
-def summarize_text(text):
+async def summarize_text(text):
     """
     GPT-4o Mini를 사용하여 텍스트 요약.
     """
