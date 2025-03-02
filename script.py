@@ -13,6 +13,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
+from aiogram.filters import Text
 
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
@@ -276,7 +277,8 @@ async def start_command(message: types.Message):
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
-@dp.callback_query(F.data == "filter_date")
+@dp.callback_query(Text("filter_date"))
+
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
     try:
         await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
