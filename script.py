@@ -7,6 +7,7 @@ import os
 import html
 import traceback
 import sys
+import asyncio
 from aiogram import F  # F 필터 사용을 위해 추가
 from aiogram.types import ReplyKeyboardRemove  # ReplyKeyboardRemove 추가
 from datetime import datetime
