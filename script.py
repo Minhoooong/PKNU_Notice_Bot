@@ -154,7 +154,7 @@ async def summarize_text(text):
     prompt = (
         f"아래의 텍스트를 3~5 문장으로 간결하고 명확하게 요약해 주세요. "
         "요약문은 가독성이 뛰어나도록 각 핵심 사항을 별도의 문단이나 항목으로 구분하고, "
-        "불필요한 중복은 제거하며, 중요한 내용은 <b>태그</b>를 사용하여 굵게 강조해 주세요.:\n\n"
+        "불필요한 중복은 제거하며, 강조할 때 반드시 볼드체(<b> 태그)만 사용하고, 다른 HTML 태그는 사용하지 말아 주세요.:\n\n"
         f"{text}\n\n요약:"
     )
 
@@ -260,10 +260,10 @@ async def send_notification(notice):
         summary_text = ""
 
     # 요약 텍스트를 HTML 이스케이프 처리한 후 이탤릭체로 표시
-    safe_summary = html.escape(summary_text)
     message_text = (
         f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
         f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
+        f"____________________________________________________________________\n"
         f"{safe_summary}"
     )
     
