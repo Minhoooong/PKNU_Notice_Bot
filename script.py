@@ -266,14 +266,14 @@ async def send_notification(notice):
     title, href, department, date = notice
     summary_text, image_urls = await extract_content(href)
 
-    # summary_text가 None이면 기본 메시지 사용
     if summary_text is None:
         summary_text = ""
 
+    # HTML 태그를 그대로 사용하기 위해 html.escape()를 제거합니다.
     message_text = (
-        f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
-        f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
-        f"{html.escape(summary_text)}"
+        f"[부경대 <b>{department}</b> 공지사항 업데이트]\n\n"
+        f"<b>{title}</b>\n\n{date}\n\n"
+        f"{summary_text}"
     )
     
     # 키보드 생성
@@ -281,10 +281,10 @@ async def send_notification(notice):
         inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
     )
     
-    # 텍스트 메시지와 키보드를 함께 전송 (한 번만 전송)
+    # 텍스트 메시지와 키보드를 함께 전송 (HTML 모드가 적용되어 있음)
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
 
-    # 이미지가 있으면 이미지 전송 (필요시)
+    # 이미지가 있으면 이미지 전송
     if image_urls:
         for url in image_urls:
             try:
