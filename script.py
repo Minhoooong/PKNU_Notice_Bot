@@ -268,7 +268,7 @@ async def send_notification(notice):
 
     if summary_text is None:
         summary_text = ""
-
+    safe_summary = summary_text
     # 요약 텍스트를 HTML 이스케이프 처리한 후 이탤릭체로 표시
     message_text = (
         f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
