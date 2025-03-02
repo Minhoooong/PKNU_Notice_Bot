@@ -5,6 +5,9 @@ import logging
 import json
 import os
 import html
+import traceback
+from aiogram import F  # F 필터 사용을 위해 추가
+from aiogram.types import ReplyKeyboardRemove  # ReplyKeyboardRemove 추가
 from datetime import datetime
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
@@ -242,6 +245,8 @@ async def check_for_new_notices():
         logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
     else:
         logging.info("✅ 새로운 공지사항이 없습니다.")
+    
+    return new_notices  # 새 공지사항 리스트 반환
 
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message):
@@ -277,8 +282,7 @@ async def start_command(message: types.Message):
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
-@dp.callback_query(Text("filter_date"))
-
+@dp.callback_query(F.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
     try:
         await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
