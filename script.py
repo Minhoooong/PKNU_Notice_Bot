@@ -273,7 +273,7 @@ async def send_notification(notice):
     message_text = (
         f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
         f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
-        f"____________________________________________________________________\n"
+        f"______________________________________________\n"
         f"{safe_summary}"
     )
     
