@@ -370,6 +370,8 @@ async def process_date_input(message: types.Message, state: FSMContext):
     await state.clear()
 
 async def run_bot():
+    await check_for_new_notices()
+    
     try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
         polling_task = asyncio.create_task(dp.start_polling(bot))
