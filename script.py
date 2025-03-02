@@ -1,24 +1,19 @@
-import traceback
-import logging
-import asyncio
+# 필요 없는 패키지 제거
+import openai
 import aiohttp
-from bs4 import BeautifulSoup
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.client.bot import DefaultBotProperties
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, CallbackQuery
-from aiogram.filters import Command
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.context import FSMContext
+import logging
 import json
 import os
 import html
 from datetime import datetime
-import urllib.parse
-import kss
-import networkx as nx
-import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from bs4 import BeautifulSoup
+from aiogram import Bot, Dispatcher, types
+from aiogram.client.bot import DefaultBotProperties
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.filters import Command
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 # 로깅 설정
@@ -154,62 +149,6 @@ async def get_school_notices(category=""):
         logging.exception("❌ Error in get_school_notices")
         return []
 
-# --- TextRank 기반 중요 문장 추출 ---
-def text_rank_key_sentences(text, top_n=5):
-    text = truncate_text(text, max_length=3000)  # ✅ 긴 텍스트를 잘라서 요약
-    
-    sentences = kss.split_sentences(text, backend="auto")
-    
-    if len(sentences) < 2:  
-        logging.warning("⚠️ 문장 개수가 너무 적어 TextRank 실행 불가.")
-        return sentences  # ✅ 문장이 1개 이하이면 그대로 반환
-
-    vectorizer = TfidfVectorizer(max_features=500)  # ✅ 단어 개수 증가 (300 → 500)
-    try:
-        sentence_vectors = vectorizer.fit_transform(sentences[:top_n*2]).toarray()
-    except ValueError as e:
-        logging.error(f"❌ TF-IDF 변환 오류: {e}")
-        return sentences[:top_n]  # ✅ 예외 발생 시 일부 문장 반환
-
-    if sentence_vectors.shape[0] < 2:  
-        logging.warning("⚠️ 문장이 부족하여 TextRank 실행 불가.")
-        return sentences  # ✅ 원본 문장을 그대로 반환
-
-    similarity_matrix = cosine_similarity(sentence_vectors, sentence_vectors)
-    nx_graph = nx.from_numpy_array(similarity_matrix)
-
-    try:
-        scores = nx.pagerank(nx_graph)
-    except Exception as e:
-        logging.error(f"❌ PageRank 오류: {e}")
-        return sentences[:top_n]  # ✅ 오류 발생 시 일부 문장 반환
-
-    ranked_sentences = sorted(
-        ((scores.get(i, 0), s) for i, s in enumerate(sentences) if i in scores), 
-        reverse=True
-    )
-
-    return [s for _, s in ranked_sentences[:top_n]] if ranked_sentences else sentences[:top_n]
-
-def extract_key_sentences(text, top_n=5):
-    """
-    중요 문장을 추출하는 함수.
-    TextRank 알고리즘을 적용하여 상위 N개의 문장을 선택.
-    """
-    sentences = kss.split_sentences(text, backend="auto")
-    
-    # 단어 빈도 기반으로 중요 단어를 선별
-    word_count = Counter(" ".join(sentences).split())
-    important_words = [word for word, count in word_count.most_common(20)]  # 상위 20개 단어 선택
-    
-    # 중요 단어가 포함된 문장만 필터링
-    key_sentences = []
-    for sentence in sentences:
-        if any(word in sentence for word in important_words):
-            key_sentences.append(sentence)
-
-    return key_sentences[:top_n]  # 상위 N개 문장 선택
-
 # --- 텍스트 요약 ---
 def summarize_text(text):
     """
@@ -218,24 +157,16 @@ def summarize_text(text):
     if text is None or not text.strip():
         return "요약할 수 없는 공지입니다."
 
-    # TextRank 알고리즘을 활용해 핵심 문장 추출 (긴 텍스트 대비 비용 절감)
-    key_sentences = text_rank_key_sentences(text, top_n=10)  # ✅ 요약 품질 향상
-
-    if not key_sentences:
-        return "요약할 수 없는 공지입니다."
-
-    combined_text = " ".join(key_sentences)  # 핵심 문장을 하나로 합침
-    prompt = f"다음 공지사항을 3~5 문장으로 간결하게 요약해줘:\n\n{combined_text}\n\n요약:"
+    prompt = f"다음 공지사항을 3~5 문장으로 간결하게 요약해줘:\n\n{text}\n\n요약:"
 
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",  # ✅ GPT-4o Mini 모델 사용
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,  # 응답의 일관성을 위해 낮게 설정
-            max_tokens=300  # ✅ 토큰 제한 해제 (더 길게 요약 가능)
+            temperature=0.3,
+            max_tokens=500  # ✅ 긴 텍스트 지원
         )
-        summary = response["choices"][0]["message"]["content"].strip()
-        return summary
+        return response["choices"][0]["message"]["content"].strip()
 
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}")
