@@ -57,16 +57,26 @@ class FilterState(StatesGroup):
 CACHE_FILE = "announcements_seen.json"
 
 def load_cache():
-    """ 캐시 파일에서 기존 공지사항 로드 """
+    """ 캐시 파일에서 기존 공지사항 로드 (항상 딕셔너리로 반환) """
     if os.path.exists(CACHE_FILE):
-        with open(CACHE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    data = {}
+                return data
+        except Exception as e:
+            logging.error(f"❌ 캐시 로드 오류: {e}")
+            return {}
     return {}
 
 def save_cache(data):
     """ 새로운 공지사항을 캐시에 저장 """
-    with open(CACHE_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    try:
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logging.error(f"❌ 캐시 저장 오류: {e}")
 
 def is_new_announcement(title, href):
     """ 새로운 공지사항인지 확인 """
@@ -77,6 +87,7 @@ def is_new_announcement(title, href):
     cache[key] = True
     save_cache(cache)
     return True  # 새로운 공지사항이면 True 반환
+
 
 # --- 날짜 파싱 함수 ---
 def parse_date(date_str):
