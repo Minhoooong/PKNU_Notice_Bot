@@ -86,12 +86,26 @@ def save_cache(data):
 
 def push_cache_changes():
     try:
+        # Git 사용자 설정
         subprocess.run(["git", "config", "user.email", "bot@example.com"], check=True)
         subprocess.run(["git", "config", "user.name", "공지봇"], check=True)
+        
+        # 캐시 파일 변경 사항 추가
         subprocess.run(["git", "add", CACHE_FILE], check=True)
+        
         commit_message = "Update announcements_seen.json with new notices"
+        # 변경 사항이 없으면 커밋 오류가 발생할 수 있으므로, 오류를 무시하도록 처리
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
-        subprocess.run(["git", "push", "origin", "main"], check=True)
+        
+        # 환경 변수 MY_PAT에 저장된 PAT 사용하여 원격 저장소에 푸시
+        pat = os.environ.get("MY_PAT")
+        if not pat:
+            logging.error("❌ MY_PAT 환경 변수가 설정되어 있지 않습니다.")
+            return
+        # OWNER와 REPO를 실제 값으로 바꿔야 합니다.
+        remote_url = f"https://{pat}@github.com/OWNER/REPO.git"
+        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
+        
         logging.info("✅ 캐시 파일이 저장소에 커밋되었습니다.")
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ 캐시 파일 커밋 오류: {e}")
@@ -250,26 +264,27 @@ def save_seen_announcements(seen):
 
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
-    seen_announcements = load_seen_announcements()
+    seen_announcements = load_cache()  # 딕셔너리 형태
     logging.info(f"Loaded seen announcements: {seen_announcements}")
     current_notices = await get_school_notices()
     logging.info(f"Fetched current notices: {current_notices}")
-    seen_titles_urls = {(title, url) for title, url, *_ in seen_announcements}
-    new_notices = [
-        (title, href, department, date) for title, href, department, date in current_notices
-        if (title, href) not in seen_titles_urls
-    ]
+    new_notices = []
+    for title, href, department, date in current_notices:
+        key = generate_cache_key(title, href)
+        if key not in seen_announcements:
+            new_notices.append((title, href, department, date))
     logging.info(f"DEBUG: New notices detected: {new_notices}")
     if new_notices:
         for notice in new_notices:
             await send_notification(notice)
-        seen_announcements.update(new_notices)
-        save_seen_announcements(seen_announcements)
+            key = generate_cache_key(notice[0], notice[1])
+            seen_announcements[key] = True
+        save_cache(seen_announcements)
+        push_cache_changes()  # 변경 사항을 저장소에 커밋 및 푸시
         logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
     else:
         logging.info("✅ 새로운 공지사항이 없습니다.")
-
-    return new_notices  # 새 공지사항 리스트 반환
+    return new_notices
 
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message):
