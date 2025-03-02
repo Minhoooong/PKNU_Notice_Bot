@@ -1,7 +1,3 @@
-# 필요 없는 패키지 제거
-from openai import AsyncOpenAI
-
-aclient = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 import aiohttp
 import logging
 import json
@@ -11,6 +7,7 @@ import traceback
 import sys
 import asyncio
 import urllib.parse
+from openai import AsyncOpenAI
 from aiogram import F  # F 필터 사용을 위해 추가
 from aiogram.types import ReplyKeyboardRemove  # ReplyKeyboardRemove 추가
 from datetime import datetime
@@ -22,7 +19,7 @@ from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 
-
+aclient = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
