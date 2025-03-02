@@ -6,6 +6,7 @@ import json
 import os
 import html
 import traceback
+import sys
 from aiogram import F  # F 필터 사용을 위해 추가
 from aiogram.types import ReplyKeyboardRemove  # ReplyKeyboardRemove 추가
 from datetime import datetime
@@ -16,7 +17,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQu
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
-from aiogram.filters import Text
 
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
@@ -221,7 +221,7 @@ def save_seen_announcements(seen):
     try:
         with open("announcements_seen.json", "w", encoding="utf-8") as f:
             json.dump([list(item) for item in seen], f, ensure_ascii=False, indent=4)
-        push_changes()
+        # push_changes()  # 제거 또는 주석 처리
     except Exception as e:
         logging.error(f"❌ Failed to save announcements_seen.json and push to GitHub: {e}")
 
@@ -282,17 +282,14 @@ async def start_command(message: types.Message):
     ])
     await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
+# 삭제: from aiogram.filters import Text
+
+# F를 이용하여 필터링
 @dp.callback_query(F.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext):
-    try:
-        await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
-    except Exception:
-        pass
+    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
-    try:
-        await callback.answer()
-    except Exception:
-        pass
+    await callback.answer()
 
 @dp.callback_query(F.data == "all_notices")
 async def callback_all_notices(callback: CallbackQuery, state: FSMContext):
