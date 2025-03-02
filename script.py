@@ -8,6 +8,7 @@ import html
 import traceback
 import sys
 import asyncio
+import urllib.parse
 from aiogram import F  # F 필터 사용을 위해 추가
 from aiogram.types import ReplyKeyboardRemove  # ReplyKeyboardRemove 추가
 from datetime import datetime
@@ -165,7 +166,7 @@ def summarize_text(text):
     prompt = f"다음 공지사항을 3~5 문장으로 간결하게 요약해줘:\n\n{text}\n\n요약:"
 
     try:
-        response = openai.ChatCompletion.create(
+        response = await openai.ChatCompletion.acreate(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
