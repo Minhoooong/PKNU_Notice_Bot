@@ -2,7 +2,7 @@ name: Check University Announcements
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/10 * * * *'  # 10분마다 실행
   workflow_dispatch:
 
 jobs:
@@ -16,12 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.8'
-
-      - name: Install system dependencies (mecab)
-        run: |
-          sudo apt update
-          sudo apt install -y mecab libmecab-dev mecab-ipadic-utf8
+          python-version: '3.10'  # ✅ Python 3.10 사용
 
       - name: Cache pip dependencies
         uses: actions/cache@v3
@@ -38,5 +33,5 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          MY_PAT: ${{ secrets.MY_PAT }}
-        run: python script.py
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}  # ✅ OpenAI API 키 추가
+        run: python bot.py  # ✅ 스크립트 파일명 수정
