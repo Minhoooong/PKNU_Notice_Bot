@@ -63,21 +63,22 @@ def generate_cache_key(title, href):
     return hashlib.md5(normalized.encode('utf-8')).hexdigest()
     
 def load_cache():
-    """ 캐시 파일에서 기존 공지사항 로드 (항상 딕셔너리로 반환) """
+    """ 캐시 파일에서 기존 공지사항 로드 (항상 딕셔너리 반환) """
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                if not isinstance(data, dict):
-                    data = {}
-                return data
+                if isinstance(data, dict):
+                    return data
+                else:
+                    return {}
         except Exception as e:
             logging.error(f"❌ 캐시 로드 오류: {e}")
             return {}
     return {}
 
 def save_cache(data):
-    """ 새로운 공지사항을 캐시에 저장 """
+    """ 캐시 데이터를 JSON 파일에 저장 (data는 딕셔너리) """
     try:
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
@@ -103,7 +104,7 @@ def push_cache_changes():
             logging.error("❌ MY_PAT 환경 변수가 설정되어 있지 않습니다.")
             return
         # OWNER와 REPO를 실제 값으로 바꿔야 합니다.
-        remote_url = f"https://{pat}@github.com/OWNER/REPO.git"
+        remote_url = f"https://{pat}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
         
         logging.info("✅ 캐시 파일이 저장소에 커밋되었습니다.")
@@ -264,7 +265,7 @@ def save_seen_announcements(seen):
 
 async def check_for_new_notices():
     logging.info("Checking for new notices...")
-    seen_announcements = load_cache()  # 딕셔너리 형태
+    seen_announcements = load_cache()  # 이제 딕셔너리
     logging.info(f"Loaded seen announcements: {seen_announcements}")
     current_notices = await get_school_notices()
     logging.info(f"Fetched current notices: {current_notices}")
@@ -280,7 +281,7 @@ async def check_for_new_notices():
             key = generate_cache_key(notice[0], notice[1])
             seen_announcements[key] = True
         save_cache(seen_announcements)
-        push_cache_changes()  # 변경 사항을 저장소에 커밋 및 푸시
+        push_cache_changes()  # 저장소에 커밋 및 푸시
         logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
     else:
         logging.info("✅ 새로운 공지사항이 없습니다.")
