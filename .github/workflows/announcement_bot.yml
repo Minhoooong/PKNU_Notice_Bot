@@ -34,4 +34,4 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}  # ✅ OpenAI API 키 추가
-        run: python bot.py  # ✅ 스크립트 파일명 수정
+        run: python script.py  # ✅ 스크립트 파일명 수정
