@@ -22,11 +22,7 @@ import networkx as nx
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from transformers import PreTrainedTokenizerFast, BartForConditionalGeneration
-
-MODEL_NAME = "EbanLee/kobart-summary-v3"
-tokenizer = PreTrainedTokenizerFast.from_pretrained(MODEL_NAME)
-model = BartForConditionalGeneration.from_pretrained(MODEL_NAME)
+openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 # 로깅 설정
 logging.basicConfig(
@@ -246,31 +242,33 @@ def extract_key_sentences(text, top_n=5):
 
 # --- 텍스트 요약 ---
 def summarize_text(text):
+    """
+    GPT-4o Mini를 사용하여 텍스트 요약.
+    """
     if text is None or not text.strip():
-        return "요약할 수 없는 공지입니다."  # ✅ 기본 값 반환
+        return "요약할 수 없는 공지입니다."
 
-    key_sentences = text_rank_key_sentences(text, top_n=7)
+    # TextRank 알고리즘을 활용해 핵심 문장 추출 (긴 텍스트 대비 비용 절감)
+    key_sentences = text_rank_key_sentences(text, top_n=10)  # ✅ 요약 품질 향상
+
     if not key_sentences:
-        return "요약할 수 없는 공지입니다."  # ✅ 빈 입력 방지
+        return "요약할 수 없는 공지입니다."
 
-    combined_text = " ".join(key_sentences)
+    combined_text = " ".join(key_sentences)  # 핵심 문장을 하나로 합침
+    prompt = f"다음 공지사항을 3~5 문장으로 간결하게 요약해줘:\n\n{combined_text}\n\n요약:"
 
     try:
-        inputs = tokenizer(combined_text, return_tensors="pt", padding=True, truncation=True, max_length=2048)
-        summary_ids = model.generate(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            num_beams=6,
-            length_penalty=1.0,
-            max_length=200,
-            min_length=50,
-            repetition_penalty=1.5,
-            no_repeat_ngram_size=15,
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",  # ✅ GPT-4o Mini 모델 사용
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,  # 응답의 일관성을 위해 낮게 설정
+            max_tokens=300  # ✅ 토큰 제한 해제 (더 길게 요약 가능)
         )
-        return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+        summary = response["choices"][0]["message"]["content"].strip()
+        return summary
 
     except Exception as e:
-        logging.error(f"❌ KoBART 요약 오류: {e}")
+        logging.error(f"❌ OpenAI API 요약 오류: {e}")
         return "요약할 수 없는 공지입니다."
         
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
@@ -294,10 +292,7 @@ async def extract_content(url):
         raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
 
         if raw_text.strip():
-            summary_text = summarize_text(raw_text)
-            if summary_text is None:
-                logging.error(f"❌ Failed to summarize content: {url}")
-                summary_text = "요약할 수 없는 공지입니다."
+            summary_text = summarize_text(raw_text)  # ✅ GPT-4o Mini 사용
         else:
             summary_text = "본문이 없습니다."
 
