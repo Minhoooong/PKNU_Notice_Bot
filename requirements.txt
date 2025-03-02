@@ -1,4 +1,4 @@
-aiohttp>=3.8.5
-beautifulsoup4>=4.11.1
-aiogram>=3.0.0
-openai>=1.0.0
+aiohttp
+beautifulsoup4
+aiogram
+openai
