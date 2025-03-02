@@ -161,8 +161,12 @@ async def summarize_text(text):
     if text is None or not text.strip():
         return "요약할 수 없는 공지입니다."
 
-    prompt = f"아래의 텍스트를 3~5 문장으로 간결하고 명확하게 요약해 주세요. 요약문은 가독성이 뛰어나도록 각 핵심 사항을 별도의 문단이나 항목으로 구분하고, 불필요한 중복은 제거하며, 중요한 내용은 강조해서 표현해 주세요.:\n\n{text}\n\n요약:"
-n\n{text}\n\n요약:"
+    prompt = (
+        f"아래의 텍스트를 3~5 문장으로 간결하고 명확하게 요약해 주세요. "
+        "요약문은 가독성이 뛰어나도록 각 핵심 사항을 별도의 문단이나 항목으로 구분하고, "
+        "불필요한 중복은 제거하며, 중요한 내용은 강조해서 표현해 주세요.:\n\n"
+        f"{text}\n\n요약:"
+    )
 
     try:
         response = await aclient.chat.completions.create(
