@@ -260,8 +260,8 @@ async def send_notification(notice):
 
     # HTML 태그를 그대로 사용하기 위해 html.escape()를 제거합니다.
     message_text = (
-        f"[부경대 <b>{department}</b> 공지사항 업데이트]\n\n"
-        f"<b>{title}</b>\n\n{date}\n\n"
+        f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
+        f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
         f"_________________________________________________________________\n"
         f"{summary_text}"
     )
