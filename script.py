@@ -1,5 +1,7 @@
 # 필요 없는 패키지 제거
-import openai
+from openai import AsyncOpenAI
+
+aclient = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 import aiohttp
 import logging
 import json
@@ -20,7 +22,6 @@ from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 
-openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 # 로깅 설정
 logging.basicConfig(
@@ -130,7 +131,7 @@ async def get_school_notices(category=""):
             title_td = tr.find("td", class_="bdlTitle")
             user_td = tr.find("td", class_="bdlUser")
             date_td = tr.find("td", class_="bdlDate")
-            
+
             if title_td and title_td.find("a") and user_td and date_td:
                 a_tag = title_td.find("a")
                 title = a_tag.get_text(strip=True)
@@ -166,18 +167,16 @@ def summarize_text(text):
     prompt = f"다음 공지사항을 3~5 문장으로 간결하게 요약해줘:\n\n{text}\n\n요약:"
 
     try:
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=500  # ✅ 긴 텍스트 지원
-        )
+        response = await aclient.chat.completions.create(model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        max_tokens=500  # ✅ 긴 텍스트 지원)
         return response["choices"][0]["message"]["content"].strip()
 
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}")
         return "요약할 수 없는 공지입니다."
-        
+
 # --- 콘텐츠 추출: bdvTxt_wrap 영역 내 텍스트와 /upload/ 이미지 크롤링 ---
 async def extract_content(url):
     try:
@@ -247,7 +246,7 @@ async def check_for_new_notices():
         logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
     else:
         logging.info("✅ 새로운 공지사항이 없습니다.")
-    
+
     return new_notices  # 새 공지사항 리스트 반환
 
 @dp.message(Command("checknotices"))
