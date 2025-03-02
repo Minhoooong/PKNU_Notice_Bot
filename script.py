@@ -8,6 +8,8 @@ import sys
 import asyncio
 import urllib.parse
 import io
+import hashlib
+import subprocess
 from openai import AsyncOpenAI
 from aiogram import F  # F 필터 사용을 위해 추가
 from aiogram.types import ReplyKeyboardRemove  # ReplyKeyboardRemove 추가
@@ -56,6 +58,10 @@ class FilterState(StatesGroup):
 
 CACHE_FILE = "announcements_seen.json"
 
+def generate_cache_key(title, href):
+    normalized = f"{title.strip().lower()}::{href.strip()}"
+    return hashlib.md5(normalized.encode('utf-8')).hexdigest()
+    
 def load_cache():
     """ 캐시 파일에서 기존 공지사항 로드 (항상 딕셔너리로 반환) """
     if os.path.exists(CACHE_FILE):
@@ -78,15 +84,26 @@ def save_cache(data):
     except Exception as e:
         logging.error(f"❌ 캐시 저장 오류: {e}")
 
-def is_new_announcement(title, href):
-    """ 새로운 공지사항인지 확인 """
+def push_cache_changes():
+    try:
+        subprocess.run(["git", "config", "user.email", "bot@example.com"], check=True)
+        subprocess.run(["git", "config", "user.name", "공지봇"], check=True)
+        subprocess.run(["git", "add", CACHE_FILE], check=True)
+        commit_message = "Update announcements_seen.json with new notices"
+        subprocess.run(["git", "commit", "-m", commit_message], check=True)
+        subprocess.run(["git", "push", "origin", "main"], check=True)
+        logging.info("✅ 캐시 파일이 저장소에 커밋되었습니다.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"❌ 캐시 파일 커밋 오류: {e}")
+
+async def is_new_announcement(title, href):
     cache = load_cache()
-    key = f"{title}::{href}"
+    key = generate_cache_key(title, href)
     if key in cache:
-        return False  # 이미 저장된 공지사항이면 False 반환
+        return False
     cache[key] = True
     save_cache(cache)
-    return True  # 새로운 공지사항이면 True 반환
+    return True
 
 # --- 날짜 파싱 함수 ---
 def parse_date(date_str):
