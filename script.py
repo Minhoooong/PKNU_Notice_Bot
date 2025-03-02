@@ -264,7 +264,7 @@ async def send_notification(notice):
     message_text = (
         f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
         f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
-        f"<i>{safe_summary}</i>"
+        f"{safe_summary}"
     )
     
     # 키보드 생성
