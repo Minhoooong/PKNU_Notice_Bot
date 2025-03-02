@@ -55,17 +55,6 @@ class FilterState(StatesGroup):
 
 CACHE_FILE = "announcements_seen.json"
 
-def truncate_text(text, max_length=3000):
-    """
-    본문이 너무 길 경우 앞부분과 뒷부분을 유지하고 중간을 생략하여 압축.
-    """
-    if len(text) <= max_length:
-        return text  # 길이가 적당하면 그대로 반환
-
-    half = max_length // 2
-    return text[:half] + " ... (중략) ... " + text[-half:]  # 앞/뒤 유지, 중간 생략
-
-
 def load_cache():
     """ 캐시 파일에서 기존 공지사항 로드 """
     if os.path.exists(CACHE_FILE):
@@ -273,7 +262,7 @@ async def send_notification(notice):
     message_text = (
         f"[부경대 <b>{department}</b> 공지사항 업데이트]\n\n"
         f"<b>{title}</b>\n\n{date}\n\n"
-        f"{summary_text}"
+        f"<i>{summary_text}</i>"
     )
     
     # 키보드 생성
