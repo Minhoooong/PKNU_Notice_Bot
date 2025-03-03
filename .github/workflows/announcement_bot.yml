@@ -1,9 +1,9 @@
 name: Check University Announcements
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'  # 10분마다 실행
   workflow_dispatch:
+  repository_dispatch:
+    types: [rerun_announcement]
 
 jobs:
   build:
@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'  # ✅ Python 3.10 사용
+          python-version: '3.10'
 
       - name: Cache pip dependencies
         uses: actions/cache@v3
@@ -33,6 +33,15 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}  # ✅ OpenAI API 키 추가
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MY_PAT: ${{ secrets.MY_PAT }}
-        run: python script.py  # ✅ 스크립트 파일명 수정
+        run: python script.py
+
+      - name: Trigger workflow re-run
+        if: success()  # 스크립트 실행 성공 시에만 재실행
+        run: |
+          curl -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: token ${{ secrets.MY_PAT }}" \
+            https://api.github.com/repos/${{ github.repository }}/dispatches \
+            -d '{"event_type": "rerun_announcement"}'
