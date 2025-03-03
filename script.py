@@ -10,6 +10,7 @@ import urllib.parse
 import io
 import hashlib
 import subprocess
+from aiogram.types import InputFile
 from openai import AsyncOpenAI
 from aiogram import F  # F 필터 사용을 위해 추가
 from aiogram.types import ReplyKeyboardRemove  # ReplyKeyboardRemove 추가
@@ -328,7 +329,9 @@ async def send_notification(notice):
                             data = await resp.read()
                             photo_bytes = io.BytesIO(data)
                             photo_bytes.name = "image.jpg"  # 확장자에 맞게 지정
-                            await bot.send_photo(chat_id=CHAT_ID, photo=photo_bytes)
+                            # BytesIO 객체를 InputFile로 감싸기
+                            input_file = InputFile(photo_bytes, filename="image.jpg")
+                            await bot.send_photo(chat_id=CHAT_ID, photo=input_file)
                         else:
                             logging.error(f"❌ 이미지 다운로드 실패: {url} (HTTP {resp.status})")
             except Exception as e:
