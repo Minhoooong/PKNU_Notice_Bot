@@ -308,34 +308,20 @@ async def send_notification(notice):
         f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
         f"<b>{html.escape(title)}</b>\n\n{html.escape(date)}\n\n"
         f"______________________________________________\n"
-        f"{safe_summary}"
+        f"{safe_summary}\n\n"
     )
+    
+    # 이미지 URL이 있으면 메시지 텍스트에 추가
+    if image_urls:
+        message_text += "이미지 링크:\n" + "\n".join(image_urls) + "\n\n"
     
     # 키보드 생성
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
     )
     
-    # 텍스트 메시지와 키보드를 함께 전송 (HTML 모드가 적용되어 있음)
+    # 텍스트 메시지와 키보드를 함께 전송 (HTML 모드 적용)
     await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
-
-    # 이미지가 있으면 다운로드 후 전송
-    if image_urls:
-        for url in image_urls:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url) as resp:
-                        if resp.status == 200:
-                            data = await resp.read()
-                            photo_bytes = io.BytesIO(data)
-                            photo_bytes.name = "image.jpg"  # 확장자에 맞게 지정
-                            # BytesIO 객체를 InputFile로 감싸기
-                            input_file = InputFile(photo_bytes, filename="image.jpg")
-                            await bot.send_photo(chat_id=CHAT_ID, photo=input_file)
-                        else:
-                            logging.error(f"❌ 이미지 다운로드 실패: {url} (HTTP {resp.status})")
-            except Exception as e:
-                logging.error(f"❌ 이미지 전송 오류: {url}, {e}")
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
