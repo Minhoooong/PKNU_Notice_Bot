@@ -458,4 +458,9 @@ async def run_bot() -> None:
         logging.info("✅ Bot session closed.")
 
 if __name__ == '__main__':
-    
+    if sys.platform.startswith("win"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    try:
+        asyncio.run(run_bot())
+    except RuntimeError as e:
+        logging.error(f"❌ asyncio 이벤트 루프 실행 중 오류 발생: {e}")
