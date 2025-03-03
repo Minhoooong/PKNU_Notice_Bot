@@ -9,6 +9,7 @@ import asyncio
 import urllib.parse
 import hashlib
 import subprocess
+from aiogram.types import CallbackQuery
 from aiogram.types import InputFile
 from openai import AsyncOpenAI
 from aiogram import F  # F 필터 사용을 위해 추가
