@@ -7,7 +7,6 @@ import traceback
 import sys
 import asyncio
 import urllib.parse
-import io
 import hashlib
 import subprocess
 from aiogram.types import InputFile
@@ -18,7 +17,6 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
