@@ -311,7 +311,7 @@ async def send_notification(notice):
     
     # 이미지 URL이 있으면 메시지 텍스트에 추가
     if image_urls:
-        message_text += "이미지 링크:\n" + "\n".join(image_urls) + "\n\n"
+        message_text += "\n".join(image_urls) + "\n\n"
     
     # 키보드 생성
     keyboard = InlineKeyboardMarkup(
