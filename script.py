@@ -11,6 +11,7 @@ import hashlib
 import subprocess
 from aiogram.types import CallbackQuery
 from aiogram.types import InputFile
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from openai import AsyncOpenAI
 from aiogram import F  # F 필터 사용을 위해 추가
 from aiogram.types import ReplyKeyboardRemove  # ReplyKeyboardRemove 추가
