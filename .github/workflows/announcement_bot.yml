@@ -45,3 +45,4 @@ jobs:
             -H "Authorization: token ${{ secrets.MY_PAT }}" \
             https://api.github.com/repos/${{ github.repository }}/dispatches \
             -d '{"event_type": "rerun_announcement"}'
+            
