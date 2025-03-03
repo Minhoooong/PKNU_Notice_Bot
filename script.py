@@ -228,15 +228,14 @@ async def extract_content(url):
         paragraphs = container.find_all('p')
         if not paragraphs:
             logging.error(f"❌ No text content found in {url}")
-            return "본문이 없습니다.", []
+            return "", []  # 본문 없음 → 빈 문자열 반환
 
         raw_text = ' '.join([para.get_text(separator=" ", strip=True) for para in paragraphs])
 
         if raw_text.strip():
-            summary_text = await summarize_text(raw_text)  # await 추가
+            summary_text = await summarize_text(raw_text)
         else:
-            summary_text = "본문이 없습니다."
-
+            summary_text = ""  # 본문이 없으면 빈 문자열로 처리
 
         images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if "/upload/" in img['src']]
         return summary_text, images
