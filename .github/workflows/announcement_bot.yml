@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/minhoooong/pknu_notice_bot:latest
+      credentials:
+        username: minhoooong
+        password: ${{ secrets.MY_PAT }}
 
     steps:
       - name: Checkout repository
