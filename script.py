@@ -332,14 +332,21 @@ async def send_notification(notice: tuple, target_chat_id: str) -> None:
 @dp.message(Command("register"))
 async def register_command(message: types.Message) -> None:
     """
-    /register 명령어: 지정된 숫자 코드를 입력하면 사용자를 화이트리스트에 등록합니다.
-    사용 예: /register 1234
+    /register 명령어: 사용자가 '/register [숫자 코드]'를 입력하면, 
+    입력된 코드가 등록 코드와 일치할 경우 화이트리스트에 사용자를 추가합니다.
     """
-    args = message.get_args().split()
-    if len(args) != 1:
+    # message.text 예: "/register 1234"
+    if not message.text:
         await message.answer("등록하려면 '/register [숫자 코드]'를 입력해 주세요.")
         return
-    code = args[0]
+
+    # 명령어와 인수를 분리 (최대 2부분으로)
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("등록하려면 '/register [숫자 코드]'를 입력해 주세요.")
+        return
+
+    code = parts[1].strip()
     if code == REGISTRATION_CODE:
         user_id = message.chat.id
         if user_id in ALLOWED_USER_IDS:
