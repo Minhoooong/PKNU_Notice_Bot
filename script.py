@@ -24,7 +24,8 @@ from openai import AsyncOpenAI
 # --- 환경 변수 / 토큰 / 상수 ---
 aclient = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
-CHAT_ID = os.environ.get('CHAT_ID')
+CHAT_ID = os.environ.get('CHAT_ID')  # 개인 채팅 응답용 (필요 시)
+GROUP_CHAT_ID = os.environ.get('GROUP_CHAT_ID')  # 새로운 공지사항 알림용 그룹 채팅 ID
 URL = 'https://www.pknu.ac.kr/main/163'
 BASE_URL = 'https://www.pknu.ac.kr'
 CACHE_FILE = "announcements_seen.json"
@@ -273,11 +274,14 @@ async def extract_content(url: str) -> tuple:
         return ("처리 중 오류가 발생했습니다.", [])
 
 # --- 새 공지 확인 ---
-async def check_for_new_notices() -> list:
+async def check_for_new_notices(target_chat_id: str = None) -> list:
     """
     모든 공지사항을 읽은 뒤, 캐시에 없는(새로운) 공지사항만 찾아서
     알림을 전송하고 캐시를 갱신한다.
+    대상 채팅 ID를 지정하지 않으면 기본적으로 그룹 채팅(GROUP_CHAT_ID)로 전송한다.
     """
+    if target_chat_id is None:
+        target_chat_id = GROUP_CHAT_ID
     logging.info("Checking for new notices...")
     seen_announcements = load_cache()
     logging.info(f"Loaded seen announcements: {seen_announcements}")
@@ -295,7 +299,7 @@ async def check_for_new_notices() -> list:
 
     if new_notices:
         for notice in new_notices:
-            await send_notification(notice)
+            await send_notification(notice, target_chat_id=target_chat_id)
             key = generate_cache_key(notice[0], notice[1])
             seen_announcements[key] = True
 
@@ -308,10 +312,10 @@ async def check_for_new_notices() -> list:
     return new_notices
 
 # --- 새 공지 메시지 전송 ---
-async def send_notification(notice: tuple) -> None:
+async def send_notification(notice: tuple, target_chat_id: str) -> None:
     """
     (title, href, department, date)를 받아 텍스트 요약 및 이미지를 포함해
-    Telegram으로 메시지를 전송한다.
+    지정한 채팅(target_chat_id)으로 메시지를 전송한다.
     """
     title, href, department, date_ = notice
     summary_text, image_urls = await extract_content(href)
@@ -331,18 +335,18 @@ async def send_notification(notice: tuple) -> None:
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
     )
-    await bot.send_message(chat_id=CHAT_ID, text=message_text, reply_markup=keyboard)
+    await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard)
 
 # --- 명령어 / 핸들러 ---
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message) -> None:
     """
     사용자가 /checknotices 명령어를 입력하면,
-    강제로 새 공지사항을 확인하고 결과를 알려준다.
+    강제로 새 공지사항을 확인하고, 새 알림은 그룹 채팅에 전송됨을 안내한다.
     """
-    new_notices = await check_for_new_notices()
+    new_notices = await check_for_new_notices(target_chat_id=GROUP_CHAT_ID)
     if new_notices:
-        await message.answer(f"📢 {len(new_notices)}개의 새로운 공지사항이 있습니다!")
+        await message.answer(f"📢 {len(new_notices)}개의 새로운 공지사항이 그룹 채팅에 전송되었습니다!")
     else:
         await message.answer("✅ 새로운 공지사항이 없습니다.")
 
@@ -392,6 +396,7 @@ async def callback_all_notices(callback: CallbackQuery, state: FSMContext) -> No
 async def callback_category_selection(callback: CallbackQuery, state: FSMContext) -> None:
     """
     카테고리를 고른 뒤 해당 카테고리의 공지사항을 최대 7개까지 알림으로 전송한다.
+    (개인 요청에 따른 결과는 해당 개인 채팅(chat.id)으로 전송)
     """
     category_code = callback.data.split("_")[1]
     notices = await get_school_notices(category_code)
@@ -400,7 +405,7 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
         await callback.message.answer("해당 카테고리의 공지사항이 없습니다.")
     else:
         for notice in notices[:7]:
-            await send_notification(notice)
+            await send_notification(notice, target_chat_id=callback.message.chat.id)
 
     await state.clear()
     await callback.answer()
@@ -410,6 +415,7 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
     """
     날짜가 입력되어야 하는 상태에서 사용자가 MM/DD 형식으로 입력하면,
     해당 날짜의 공지사항만 필터링하여 전송한다.
+    (개인 요청에 따른 결과는 해당 개인 채팅(message.chat.id)으로 전송)
     """
     current_state = await state.get_state()
     if current_state != FilterState.waiting_for_date.state:
@@ -434,7 +440,7 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
     else:
         await message.answer(f"📢 {input_text}의 공지사항을 불러옵니다.", reply_markup=ReplyKeyboardRemove())
         for notice in filtered_notices:
-            await send_notification(notice)
+            await send_notification(notice, target_chat_id=message.chat.id)
 
     await state.clear()
 
@@ -443,7 +449,7 @@ async def run_bot() -> None:
     """
     봇을 실행하고, 10분 후 종료(테스트 / 임시 목적)하도록 설정한다.
     """
-    await check_for_new_notices()
+    await check_for_new_notices()  # 기본적으로 GROUP_CHAT_ID로 전송됨
     try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
         polling_task = asyncio.create_task(dp.start_polling(bot))
@@ -467,12 +473,10 @@ if __name__ == '__main__':
         
         async def notify_crash():
             try:
-                # 이전 bot 인스턴스가 종료되었을 수 있으므로 새 인스턴스를 생성
                 new_bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-                await new_bot.send_message(CHAT_ID, f"봇이 오류로 종료되었습니다:\n{e}\n\n재실행 해주세요.")
+                await new_bot.send_message(GROUP_CHAT_ID, f"봇이 오류로 종료되었습니다:\n{e}\n\n재실행 해주세요.")
                 await new_bot.session.close()
             except Exception as notify_error:
                 logging.error(f"❌ 알림 전송 실패: {notify_error}")
         
-        # 별도의 event loop에서 crash 알림 전송 실행
         asyncio.run(notify_crash())
