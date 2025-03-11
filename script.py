@@ -59,7 +59,27 @@ dp = Dispatcher(bot=bot)
 class FilterState(StatesGroup):
     waiting_for_date = State()
     selecting_category = State()
-
+  
+def push_whitelist_changes() -> None:
+    """
+    whitelist.json 파일 변경 사항을 원격 저장소에 커밋 및 푸시합니다.
+    """
+    try:
+        subprocess.run(["git", "config", "user.email", "bot@example.com"], check=True)
+        subprocess.run(["git", "config", "user.name", "공지봇"], check=True)
+        subprocess.run(["git", "add", WHITELIST_FILE], check=True)
+        commit_message = "Update whitelist.json with new registrations"
+        subprocess.run(["git", "commit", "-m", commit_message], check=True)
+        pat = os.environ.get("MY_PAT")
+        if not pat:
+            logging.error("❌ MY_PAT 환경 변수가 설정되어 있지 않습니다.")
+            return
+        remote_url = f"https://{pat}@github.com/Minhoooong/PKNU_Notice_Bot.git"
+        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
+        logging.info("✅ whitelist.json 파일이 저장소에 커밋되었습니다.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"❌ whitelist.json 커밋 오류: {e}", exc_info=True)
+      
 # --- 화이트리스트 관리 함수 ---
 def load_whitelist() -> set:
     """
@@ -350,10 +370,11 @@ async def register_command(message: types.Message) -> None:
         if user_id in ALLOWED_USER_IDS:
             await message.answer("이미 등록되어 있습니다.")
         else:
-            ALLOWED_USER_IDS.add(user_id)
-            save_whitelist(ALLOWED_USER_IDS)
-            await message.answer("등록 성공! 이제 개인 채팅 기능을 이용할 수 있습니다.")
-            logging.info(f"새 화이트리스트 등록: {user_id}")
+          ALLOWED_USER_IDS.add(user_id)
+          save_whitelist(ALLOWED_USER_IDS)
+          push_whitelist_changes()  # 원격에 whitelist.json 변경사항을 커밋/푸시
+          await message.answer("등록 성공! 이제 개인 채팅 기능을 이용할 수 있습니다.")
+          logging.info(f"새 화이트리스트 등록: {user_id}")
     else:
         await message.answer("잘못된 코드입니다.")
 
