@@ -26,6 +26,7 @@ aclient = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('CHAT_ID')  # 개인 채팅 응답용 (필요 시)
 GROUP_CHAT_ID = os.environ.get('GROUP_CHAT_ID')  # 새로운 공지사항 알림용 그룹 채팅 ID
+logging.info(f"Using GROUP_CHAT_ID: {GROUP_CHAT_ID}")
 URL = 'https://www.pknu.ac.kr/main/163'
 BASE_URL = 'https://www.pknu.ac.kr'
 CACHE_FILE = "announcements_seen.json"
