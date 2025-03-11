@@ -19,9 +19,13 @@ jobs:
         uses: actions/checkout@v3
         with:
           persist-credentials: true
+          fetch-depth: 0
 
       - name: Set safe directory
-        run: git config --global --add safe.directory ${{ github.workspace }}
+        run: git config --global --get-all safe.directory
+      
+      - name: Set safe directory explicitly
+        run: git config --global --add safe.directory /__w/PKNU_Notice_Bot/PKNU_Notice_Bot
 
       # Docker 이미지에 이미 의존성와 git-crypt가 설치되어 있으므로,
       # 별도의 설치 단계는 생략 가능합니다.
