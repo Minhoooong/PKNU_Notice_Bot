@@ -48,6 +48,7 @@ jobs:
           GROUP_CHAT_ID: ${{ secrets.GROUP_CHAT_ID }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MY_PAT: ${{ secrets.MY_PAT }}
+          REGISTRATION_CODE: ${{ secrets.REGISTRATION_CODE }}
         run: python script.py
 
       - name: Trigger workflow re-run
