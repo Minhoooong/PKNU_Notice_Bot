@@ -24,13 +24,19 @@ jobs:
       - name: Set safe directory explicitly
         run: git config --global --add safe.directory /home/runner/work/PKNU_Notice_Bot/PKNU_Notice_Bot
 
+      - name: List workspace
+        run: |
+          pwd
+          ls -la ${{ github.workspace }}
+
       # Docker 이미지에 이미 의존성와 git-crypt가 설치되어 있으므로,
       # 별도의 설치 단계는 생략 가능합니다.
       - name: Unlock git-crypt
         env:
           GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
-          GIT_CRYPT_ALLOW_UNSAFE_REPOSITORY: 1
         run: |
+          export GIT_CRYPT_ALLOW_UNSAFE_REPOSITORY=1
+          git config --global --add safe.directory "${{ github.workspace }}"
           echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
           git-crypt unlock keyfile
 
