@@ -339,13 +339,11 @@ async def register_command(message: types.Message) -> None:
     if not message.text:
         await message.answer("등록하려면 '/register [숫자 코드]'를 입력해 주세요.")
         return
-
     # 명령어와 인수를 분리 (최대 2부분으로)
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         await message.answer("등록하려면 '/register [숫자 코드]'를 입력해 주세요.")
         return
-
     code = parts[1].strip()
     if code == REGISTRATION_CODE:
         user_id = message.chat.id
