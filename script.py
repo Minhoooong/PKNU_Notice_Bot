@@ -462,5 +462,17 @@ if __name__ == '__main__':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     try:
         asyncio.run(run_bot())
-    except RuntimeError as e:
-        logging.error(f"❌ asyncio 이벤트 루프 실행 중 오류 발생: {e}")
+    except Exception as e:
+        logging.error(f"❌ Bot terminated with error: {e}")
+        
+        async def notify_crash():
+            try:
+                # 이전 bot 인스턴스가 종료되었을 수 있으므로 새 인스턴스를 생성
+                new_bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+                await new_bot.send_message(CHAT_ID, f"봇이 오류로 종료되었습니다:\n{e}\n\n재실행 해주세요.")
+                await new_bot.session.close()
+            except Exception as notify_error:
+                logging.error(f"❌ 알림 전송 실패: {notify_error}")
+        
+        # 별도의 event loop에서 crash 알림 전송 실행
+        asyncio.run(notify_crash())
