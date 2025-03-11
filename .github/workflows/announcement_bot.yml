@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/minhoooong/pknu_notice_bot:latest .
 
     steps:
       - name: Checkout repository
@@ -15,19 +17,14 @@ jobs:
         with:
           persist-credentials: true
 
-      - name: Set up Python & Install dependencies
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - run: pip install -r requirements.txt
-
-      - name: Install and unlock git-crypt
-        run: |
-          sudo apt-get update && sudo apt-get install -y git-crypt
-          echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
-          git-crypt unlock keyfile
+      # Docker 이미지에 이미 의존성와 git-crypt가 설치되어 있으므로,
+      # 별도의 설치 단계는 생략 가능합니다.
+      - name: Unlock git-crypt
         env:
           GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
+          git-crypt unlock keyfile
 
       - name: Run announcement bot script
         env:
@@ -37,7 +34,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MY_PAT: ${{ secrets.MY_PAT }}
           REGISTRATION_CODE: ${{ secrets.REGISTRATION_CODE }}
-        run: python script.py
+        run: python3 script.py
 
       - name: Trigger workflow re-run
         if: success()
