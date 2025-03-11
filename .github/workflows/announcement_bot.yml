@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/minhoooong/pknu_notice_bot:latest .
+      image: ghcr.io/minhoooong/pknu_notice_bot:latest
 
     steps:
       - name: Checkout repository
