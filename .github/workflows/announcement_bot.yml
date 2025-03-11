@@ -15,33 +15,19 @@ jobs:
         with:
           persist-credentials: true
 
-      - name: Set up Python
+      - name: Set up Python & Install dependencies
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+      - run: pip install -r requirements.txt
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v3
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Install git-crypt
+      - name: Install and unlock git-crypt
         run: |
-          sudo apt-get update
-          sudo apt-get install -y git-crypt
-
-      - name: Unlock git-crypt
-        env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
-        run: |
+          sudo apt-get update && sudo apt-get install -y git-crypt
           echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
           git-crypt unlock keyfile
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
 
       - name: Run announcement bot script
         env:
@@ -54,7 +40,7 @@ jobs:
         run: python script.py
 
       - name: Trigger workflow re-run
-        if: success()  # 스크립트 실행 성공 시에만 재실행
+        if: success()
         run: |
           curl -X POST \
             -H "Accept: application/vnd.github+json" \
