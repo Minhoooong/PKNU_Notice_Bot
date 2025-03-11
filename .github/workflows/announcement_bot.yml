@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
       
       - name: Set safe directory explicitly
-        run: git config --global --add safe.directory /home/runner/work/PKNU_Notice_Bot/PKNU_Notice_Bot
+        run: git config --global --add safe.directory "${{ github.workspace }}"
 
       - name: List workspace
         run: |
