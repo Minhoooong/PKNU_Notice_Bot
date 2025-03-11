@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 0
       
       - name: Set safe directory explicitly
-        run: sudo git config --global --add safe.directory ${{ github.workspace }}
+        run: git config --global --add safe.directory /home/runner/work/PKNU_Notice_Bot/PKNU_Notice_Bot
 
       # Docker 이미지에 이미 의존성와 git-crypt가 설치되어 있으므로,
       # 별도의 설치 단계는 생략 가능합니다.
