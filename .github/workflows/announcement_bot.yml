@@ -29,6 +29,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Install git-crypt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git-crypt
+
+      - name: Unlock git-crypt
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          echo "$GIT_CRYPT_KEY" > keyfile
+          git-crypt unlock keyfile
+
       - name: Run announcement bot script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
