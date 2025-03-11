@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -59,4 +61,3 @@ jobs:
             -H "Authorization: token ${{ secrets.MY_PAT }}" \
             https://api.github.com/repos/${{ github.repository }}/dispatches \
             -d '{"event_type": "rerun_announcement"}'
-            
