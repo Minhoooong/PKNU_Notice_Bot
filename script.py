@@ -382,7 +382,7 @@ async def run_bot() -> None:
     try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
         polling_task = asyncio.create_task(dp.start_polling(bot))
-        await asyncio.sleep(600)
+        await asyncio.sleep(60)
         logging.info("🛑 Stopping bot polling after 10 minutes...")
         polling_task.cancel()
         await dp.stop_polling()
