@@ -37,6 +37,9 @@ jobs:
           echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
           git-crypt unlock keyfile
 
+      - name: Install curl 
+        run: sudo apt-get install -y curl
+
       - name: Run announcement bot script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
