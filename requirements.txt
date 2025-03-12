@@ -2,4 +2,3 @@ aiohttp
 aiogram
 beautifulsoup4
 openai
-crul
