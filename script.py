@@ -18,6 +18,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
+from playwright.async_api import async_playwright  # 추가: Playwright
 
 # 환경 변수 / 토큰 / 상수
 aclient = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -195,6 +196,7 @@ def parse_date(date_str: str):
         logging.error(f"Date parsing error for {date_str}: {ve}", exc_info=True)
         return None
 
+# 기존 aiohttp 방식
 async def fetch_url(url: str) -> str:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
@@ -218,144 +220,36 @@ async def fetch_url(url: str) -> str:
         logging.error(f"❌ URL 요청 오류: {url}, {e}", exc_info=True)
         return None
 
-async def get_school_notices(category: str = "") -> list:
+# 새 함수: Playwright를 사용하여 동적 콘텐츠 렌더링 후 HTML 반환
+async def fetch_dynamic_html(url: str) -> str:
     try:
-        category_url = f"{URL}?cd={category}" if category else URL
-        html_content = await fetch_url(category_url)
-        if html_content is None:
-            logging.error(f"❌ 공지사항 페이지를 불러올 수 없습니다: {category_url}")
-            return []
-        soup = BeautifulSoup(html_content, 'html.parser')
-        notices = []
-        for tr in soup.find_all("tr"):
-            title_td = tr.find("td", class_="bdlTitle")
-            user_td = tr.find("td", class_="bdlUser")
-            date_td = tr.find("td", class_="bdlDate")
-            if title_td and title_td.find("a") and user_td and date_td:
-                a_tag = title_td.find("a")
-                title = a_tag.get_text(strip=True)
-                href = a_tag.get("href")
-                if href.startswith("/"):
-                    href = BASE_URL + href
-                elif href.startswith("?"):
-                    href = BASE_URL + "/main/163" + href
-                elif not href.startswith("http"):
-                    href = BASE_URL + "/" + href
-                department = user_td.get_text(strip=True)
-                date_ = date_td.get_text(strip=True)
-                notices.append((title, href, department, date_))
-        notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
-        return notices
-    except Exception:
-        logging.exception("❌ Error in get_school_notices")
-        return []
-
-async def summarize_text(text: str) -> str:
-    if not text or not text.strip():
-        return "요약할 수 없는 공지입니다."
-    prompt = (
-        f"아래의 텍스트를 3~5 문장으로 간결하고 명확하게 요약해 주세요. "
-        "각 핵심 사항은 별도의 문단이나 항목으로 구분하며, 불필요한 중복은 제거하고, "
-        "강조 시 <b> 태그만 사용하세요.:\n\n"
-        f"{text}\n\n요약:"
-    )
-    try:
-        response = await aclient.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=500
-        )
-        return response.choices[0].message.content.strip()
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, timeout=60000)
+            await page.wait_for_load_state("networkidle")
+            content = await page.content()
+            await browser.close()
+            logging.debug(f"동적 렌더링 HTML 길이: {len(content)}")
+            return content
     except Exception as e:
-        logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
-        return "요약할 수 없는 공지입니다."
+        logging.error(f"❌ 동적 HTML 가져오기 오류: {url}, {e}", exc_info=True)
+        return None
 
-async def extract_content(url: str) -> tuple:
-    try:
-        html_content = await fetch_url(url)
-        if not html_content or not html_content.strip():
-            logging.error(f"❌ Failed to fetch content: {url}")
-            return ("페이지를 불러올 수 없습니다.", [])
-        soup = BeautifulSoup(html_content, 'html.parser')
-        container = soup.find("div", class_="bdvTxt_wrap") or soup
-        paragraphs = container.find_all('p')
-        if not paragraphs:
-            logging.error(f"❌ No text content found in {url}")
-            return ("", [])
-        raw_text = ' '.join(para.get_text(separator=" ", strip=True) for para in paragraphs)
-        summary_text = await summarize_text(raw_text) if raw_text.strip() else ""
-        images = [urllib.parse.urljoin(url, img['src'])
-                  for img in container.find_all('img')
-                  if "/upload/" in img.get('src', '')]
-        return (summary_text, images)
-    except Exception as e:
-        logging.error(f"❌ Exception in extract_content for URL {url}: {e}", exc_info=True)
-        return ("처리 중 오류가 발생했습니다.", [])
-
-# --------------------- 프로그램(비교과) 관련 함수 ---------------------
-def build_filter_url(user_filters: dict) -> str:
-    base_params = {
-        "pageIndex": 1,
-        "action": "",
-        "order": 0,
-        "filterOF": 1,
-        "all": 0,
-        "intr": 0,
-        "ridx": 0,
-        "newAppr": 0,
-        "rstOk": 0,
-        "recvYn": 0,
-        "aIridx": 0,
-        "clsf": "",    # 학생 학습역량 강화
-        "type": [],    # 프로그램 유형 (다중값: list)
-        "diag": "",
-        "oneYy": 0,
-        "twoYy": 0,
-        "trdYy": 0,
-        "std1": 0,
-        "std2": 0,
-        "std3": 0,
-        "std4": 0,
-        "deptCd": "",
-        "searchKeyword": ""
-    }
-    filter_mapping = {
-        "학생 학습역량 강화": ("clsf", "'A01'", False),
-        "1학년": ("std1", 1, False),
-        "2학년": ("std2", 1, False),
-        "3학년": ("std3", 1, False),
-        "4학년": ("std4", 1, False),
-        "멘토링": ("type", "멘토링", True),
-        "특강": ("type", "특강", True),
-        "워크숍": ("type", "워크숍", True),
-        "세미나": ("type", "세미나", True),
-        "캠프": ("type", "캠프", True),
-        "경진대회": ("type", "경진대회", True),
-    }
-    for key, selected in user_filters.items():
-        if selected and key in filter_mapping:
-            param_key, param_value, multi = filter_mapping[key]
-            if multi:
-                base_params[param_key].append(param_value)
-            else:
-                base_params[param_key] = param_value
-    url = PROGRAM_URL + "?" + urllib.parse.urlencode(base_params, doseq=True)
-    logging.info(f"생성된 필터 URL: {url}")
-    return url
-
+# 동적 페이지의 프로그램 목록을 파싱하도록 수정한 get_programs 함수
 async def get_programs(user_filters: dict = None) -> list:
     if user_filters is None:
         url = PROGRAM_URL
     else:
         url = build_filter_url(user_filters)
-    html_content = await fetch_url(url)
+    # 동적 콘텐츠를 가져오기 위해 fetch_dynamic_html 사용
+    html_content = await fetch_dynamic_html(url)
     if html_content is None:
-        logging.error("❌ 필터 적용된 프로그램 페이지를 불러올 수 없습니다.")
+        logging.error("❌ 필터 적용된 프로그램 페이지를 동적 렌더링으로 불러올 수 없습니다.")
         return []
     soup = BeautifulSoup(html_content, 'html.parser')
     programs = []
-    # "ul.flex-wrap > li" 선택자로 프로그램 항목 선택
+    # ul.flex-wrap > li 선택자로 프로그램 항목 선택
     program_items = soup.select("ul.flex-wrap > li")
     if not program_items:
         logging.debug("No 'ul.flex-wrap > li' elements found. Trying alternative selectors...")
@@ -381,7 +275,6 @@ async def get_programs(user_filters: dict = None) -> list:
         link = ""
         onclick_attr = card_body.get("onclick")
         if onclick_attr:
-            # 예: "location.href='/main/65?action=get&yy=2025&shtm=U0003001&...';"
             parts = onclick_attr.split("'")
             if len(parts) >= 2:
                 link = parts[1]
@@ -450,7 +343,6 @@ async def start_command(message: types.Message) -> None:
 # "공지사항" 버튼 클릭 시 옵션 제공
 @dp.callback_query(lambda c: c.data == "notice_menu")
 async def notice_menu_handler(callback: CallbackQuery, state: FSMContext):
-    # 즉시 응답하여 오래된 쿼리 문제 방지
     await callback.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"),
@@ -461,8 +353,7 @@ async def notice_menu_handler(callback: CallbackQuery, state: FSMContext):
 # --------------------- 비교과(프로그램) 옵션 버튼 ---------------------
 @dp.callback_query(lambda c: c.data == "compare_programs")
 async def compare_programs_handler(callback: CallbackQuery):
-    await callback.answer()  # 즉시 응답
-    # 두 버튼을 한 행에 배치
+    await callback.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="나만의 프로그램", callback_data="my_programs"),
          InlineKeyboardButton(text="키워드 검색", callback_data="keyword_search")]
@@ -472,7 +363,7 @@ async def compare_programs_handler(callback: CallbackQuery):
 # "나만의 프로그램" 버튼 클릭 시 필터 선택 UI 또는 결과 업데이트
 @dp.callback_query(lambda c: c.data == "my_programs")
 async def my_programs_handler(callback: CallbackQuery):
-    await callback.answer()  # 즉시 응답
+    await callback.answer()
     chat_id = callback.message.chat.id
     user_id_str = str(chat_id)
     if user_id_str not in ALLOWED_USERS:
@@ -491,7 +382,7 @@ async def my_programs_handler(callback: CallbackQuery):
         for program in programs:
             text += f"- {program['title']} ({program['date']})\n"
         await callback.message.edit_text(text)
-        
+
 # 프로그램 필터 설정 UI: 그룹화된 버튼 배열
 def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     group1 = ["학생 학습역량 강화"]
@@ -505,24 +396,20 @@ def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
         ALLOWED_USERS[user_id_str]["filters"] = {opt: False for opt in default_options}
     current = ALLOWED_USERS[user_id_str].get("filters", {opt: False for opt in default_options})
     rows = []
-    # 그룹1 row
     row1 = [InlineKeyboardButton(text=f"{'✅' if current.get(opt, False) else ''} {opt}".strip(), callback_data=f"toggle_program_{opt}") for opt in group1]
     rows.append(row1)
-    # 그룹2 row
     row2 = [InlineKeyboardButton(text=f"{'✅' if current.get(opt, False) else ''} {opt}".strip(), callback_data=f"toggle_program_{opt}") for opt in group2]
     rows.append(row2)
-    # 그룹3: 3개씩
     group3_buttons = [InlineKeyboardButton(text=f"{'✅' if current.get(opt, False) else ''} {opt}".strip(), callback_data=f"toggle_program_{opt}") for opt in group3]
     for i in range(0, len(group3_buttons), 3):
         rows.append(group3_buttons[i:i+3])
-    # 마지막 행: 선택 완료 버튼
     rows.append([InlineKeyboardButton(text="선택 완료", callback_data="filter_done_program")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 # 필터 토글: 옵션 선택/해제 후 UI 업데이트
 @dp.callback_query(lambda c: c.data.startswith("toggle_program_"))
 async def toggle_program_filter(callback: CallbackQuery):
-    await callback.answer()  # 즉시 응답
+    await callback.answer()
     chat_id = callback.message.chat.id
     user_id_str = str(chat_id)
     option = callback.data.split("toggle_program_")[1]
@@ -540,17 +427,17 @@ async def toggle_program_filter(callback: CallbackQuery):
 # 필터 설정 완료: 선택한 필터 표시 및 메시지 업데이트
 @dp.callback_query(lambda c: c.data == "filter_done_program")
 async def filter_done_program_handler(callback: CallbackQuery):
-    await callback.answer()  # 즉시 응답
+    await callback.answer()
     chat_id = callback.message.chat.id
     user_id_str = str(chat_id)
     user_filter = ALLOWED_USERS[user_id_str].get("filters", {})
     selected = [opt for opt, chosen in user_filter.items() if chosen]
     await callback.message.edit_text(f"선택한 필터: {', '.join(selected) if selected else '없음'}")
-    
-# 키워드 검색: 일반 메시지로 결과 업데이트 (사용자가 보낸 메시지는 편집할 수 없으므로 answer() 사용)
+
+# 키워드 검색: 일반 메시지로 결과 업데이트
 @dp.callback_query(lambda c: c.data == "keyword_search")
 async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()  # 즉시 응답
+    await callback.answer()
     await callback.message.edit_text("검색할 키워드를 입력해 주세요:")
     await state.set_state("keyword_search")
 
@@ -561,7 +448,6 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
         keyword = message.text.strip()
         await state.clear()
         await message.answer(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
-        # 실제 키워드 검색 로직 추가 가능
 
 # --------------------- /register 및 기타 명령어 ---------------------
 @dp.message(Command("register"))
@@ -618,13 +504,13 @@ async def manual_check_notices(message: types.Message) -> None:
 
 @dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()  # 즉시 응답
+    await callback.answer()
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
 
 @dp.callback_query(lambda c: c.data == "all_notices")
 async def callback_all_notices(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()  # 즉시 응답
+    await callback.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=category, callback_data=f"category_{code}")]
         for category, code in CATEGORY_CODES.items()
@@ -634,7 +520,7 @@ async def callback_all_notices(callback: CallbackQuery, state: FSMContext) -> No
 
 @dp.callback_query(lambda c: c.data.startswith("category_"))
 async def callback_category_selection(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()  # 즉시 응답
+    await callback.answer()
     category_code = callback.data.split("_")[1]
     notices = await get_school_notices(category_code)
     if not notices:
