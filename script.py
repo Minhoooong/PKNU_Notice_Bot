@@ -733,25 +733,36 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
     if not notices:
         await callback.message.edit_text("해당 카테고리의 공지사항이 없습니다.")
     else:
-        # 개별 공지사항 메시지를 그룹 채팅 형식으로 전송
+        # 각 공지사항을 개별 메시지로 전송
         for notice in notices[:7]:  # 최대 7개 공지사항
             title = html.escape(notice[0])  # 제목 HTML 이스케이프
-            date = html.escape(notice[3])  # 날짜 HTML 이스케이프
-            department = html.escape(notice[2])  # 부서 정보 이스케이프
+            department = html.escape(notice[2])  # 부서 HTML 이스케이프
+            date_ = html.escape(notice[3])  # 날짜 HTML 이스케이프
             href = notice[1]  # 공지사항 링크
 
+            # 공지사항 세부 내용 추출
+            summary_text, image_urls = await extract_content(href)
+            safe_summary = summary_text or ""
+
+            # 메시지 텍스트 구성
             message_text = (
-                f"<b>{title}</b>\n"
-                f"<i>{department}</i>\n"
+                f"[부경대 <b>{department}</b> 공지사항 업데이트]\n\n"
+                f"<b>{title}</b>\n\n"
+                f"{date_}\n\n"
                 "______________________________________________\n"
-                f"📅 <b>날짜:</b> {date}\n"
-                f"🔗 <a href='{href}'>자세히 보기</a>\n"
+                f"{safe_summary}\n\n"
             )
 
-            # 개별 공지사항 메시지를 전송
+            # 이미지가 있을 경우 추가
+            if image_urls:
+                message_text += "\n".join(image_urls) + "\n\n"
+
+            # 인라인 버튼 추가
             keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🔎 자세히 보기", url=href)]]
+                inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
             )
+
+            # 개별 메시지 전송
             await callback.message.answer(message_text, reply_markup=keyboard, parse_mode="HTML")
 
     await state.clear()
@@ -909,6 +920,12 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
     full_date_str = f"{current_year}-{input_text.replace('/', '-')}"  # MM/DD -> YYYY-MM-DD로 변환
     filter_date = parse_single_date(full_date_str)  # 수정된 날짜 파싱 함수 사용
     
+    # 로그 추가: 날짜 파싱이 성공적으로 이루어졌는지 확인
+    if filter_date:
+        logging.info(f"입력된 날짜: {input_text} -> 파싱된 날짜: {filter_date.strftime('%Y-%m-%d')}")
+    else:
+        logging.error(f"날짜 파싱 실패: {input_text}")
+
     if filter_date is None:
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
         return
