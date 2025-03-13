@@ -224,11 +224,12 @@ async def get_programs(user_filters: dict = None) -> list:
         return []
     soup = BeautifulSoup(html_content, 'html.parser')
     programs = []
-    # "ul.flex-wrap > li" 선택자로 프로그램 항목 선택
-    program_items = soup.select("ul.flex-wrap > li")
+    # 우선 "ul.px-0.flex-wrap > li" 선택자로 프로그램 항목 선택 (이 클래스 조합은 실제 페이지에 있음)
+    program_items = soup.select("ul.px-0.flex-wrap > li")
     if not program_items:
-        logging.debug("No 'ul.flex-wrap > li' elements found. Trying alternative selectors...")
-        program_items = soup.select(".program-item")
+        logging.debug("No 'ul.px-0.flex-wrap > li' elements found. Trying alternative selectors...")
+        # 없으면 "ul.flex-wrap > li" 선택자로 시도
+        program_items = soup.select("ul.flex-wrap > li")
     if not program_items:
         snippet = html_content[:500]
         logging.debug(f"HTML snippet for filtered page: {snippet}")
@@ -239,7 +240,7 @@ async def get_programs(user_filters: dict = None) -> list:
         # 제목 추출: h4.card-title 내부 텍스트
         title_elem = card_body.select_one("h4.card-title")
         title = title_elem.get_text(strip=True) if title_elem else "제목없음"
-        # 날짜 추출: 모집기간 정보 (첫 번째 col-12 내 두 번째 span)
+        # 날짜 추출: 모집기간 정보 (첫 번째 col-12의 두 번째 span)
         date_str = ""
         app_date_divs = card_body.select("div.row.app_date div.col-12")
         if app_date_divs:
