@@ -456,71 +456,85 @@ async def get_programs(user_filters: dict = None) -> list:
         logging.debug(f"HTML snippet for filtered page: {snippet}")
 
     for item in program_items:
-        card_body = item.select_one("div.card-body")
-        if not card_body:
-            continue
+    card_body = item.select_one("div.card-body")
+    if not card_body:
+        continue
 
-        # 제목
-        title_elem = card_body.select_one("h4.card-title")
-        title = title_elem.get_text(strip=True) if title_elem else "제목없음"
+    # 제목
+    title_elem = card_body.select_one("h4.card-title")
+    title = title_elem.get_text(strip=True) if title_elem else "제목없음"
 
-        # 카테고리 정보 (예: 자연과학대학 > 경영대학 > 경영대학원)
-        category_elems = card_body.select("div.card-category span")
-        categories = [elem.get_text(strip=True) for elem in category_elems] if category_elems else []
+    # ----- (수정) 카테고리/학과/부서 정보 -----
+    # sub_info 영역 안에 "첫 번째 div"는 학과/부서, "두 번째 div"가 실제 카테고리 역할
+    sub_info_div = card_body.select_one("div.sub_info.mb-2")
+    if sub_info_div:
+        # 첫 번째
+        dept_elem = sub_info_div.select_one("div.col-7.px-0.text-truncate")
+        # 두 번째 (dept_elem 바로 다음 형제)
+        category_elem = dept_elem.find_next_sibling("div") if dept_elem else None
 
-        # 설명 (프로그램 세부 내용)
-        description_elem = card_body.select_one("p.card-text")
-        description = description_elem.get_text(strip=True) if description_elem else "설명 없음"
+        # 각각의 텍스트
+        department = dept_elem.get_text(strip=True) if dept_elem else "부서 정보 없음"
+        category = category_elem.get_text(strip=True) if category_elem else "카테고리 없음"
 
-        # 모집 기간 (app_date의 첫 번째 col-12 내 두 번째 span)
-        recruitment_period = ""
-        app_date_divs = card_body.select("div.row.app_date div.col-12")
-        if app_date_divs:
-            spans = app_date_divs[0].find_all("span")
-            if len(spans) >= 2:
-                recruitment_period = spans[1].get_text(strip=True)
+        # 예: 카테고리를 리스트 형태로 관리하고 싶다면
+        categories = [department, category]
+    else:
+        categories = []
 
-        # 운영 기간 (app_date의 두 번째 col-12 내 두 번째 span)
-        operation_period = ""
-        if len(app_date_divs) > 1:
-            spans = app_date_divs[1].find_all("span")
-            if len(spans) >= 2:
-                operation_period = spans[1].get_text(strip=True)
+    # 설명 (프로그램 세부 내용)
+    description_elem = card_body.select_one("p.card-text")
+    description = description_elem.get_text(strip=True) if description_elem else "설명 없음"
 
-        # 모집 인원 및 지원 인원 추출
-        capacity_elem = card_body.select_one("span.total_member")
-        applicants_elem = card_body.select_one("span.volun")
+    # 모집 기간
+    recruitment_period = ""
+    app_date_divs = card_body.select("div.row.app_date div.col-12")
+    if app_date_divs:
+        spans = app_date_divs[0].find_all("span")
+        if len(spans) >= 2:
+            recruitment_period = spans[1].get_text(strip=True)
 
-        # 숫자만 추출
-        capacity = re.search(r"\d+", capacity_elem.get_text(strip=True) if capacity_elem else "")
-        applicants = re.search(r"\d+", applicants_elem.get_text(strip=True) if applicants_elem else "")
+    # 운영 기간
+    operation_period = ""
+    if len(app_date_divs) > 1:
+        spans = app_date_divs[1].find_all("span")
+        if len(spans) >= 2:
+            operation_period = spans[1].get_text(strip=True)
 
-        capacity = capacity.group() if capacity else "정보 없음"
-        applicants = applicants.group() if applicants else "정보 없음"
+    # 모집 인원 및 지원 인원 추출
+    capacity_elem = card_body.select_one("span.total_member")
+    applicants_elem = card_body.select_one("span.volun")
 
-        # 링크 (onclick 속성)
-        link = ""
-        onclick_attr = card_body.get("onclick")
-        if onclick_attr:
-            parts = onclick_attr.split("'")
-            if len(parts) >= 2:
-                link = parts[1]
-                if link.startswith("/"):
-                    link = "https://whalebe.pknu.ac.kr" + link
+    # 숫자만 추출
+    capacity_match = re.search(r"\d+", capacity_elem.get_text(strip=True) if capacity_elem else "")
+    applicants_match = re.search(r"\d+", applicants_elem.get_text(strip=True) if applicants_elem else "")
 
-        programs.append({
-            "title": title,
-            "categories": categories,
-            "description": description,
-            "recruitment_period": recruitment_period,
-            "operation_period": operation_period,
-            "capacity": capacity,
-            "applicants": applicants,
-            "href": link
-        })
+    capacity = capacity_match.group() if capacity_match else "정보 없음"
+    applicants = applicants_match.group() if applicants_match else "정보 없음"
 
-    programs.sort(key=lambda x: parse_date(x["recruitment_period"]) or datetime.min, reverse=True)
-    return programs
+    # 링크 (onclick 속성)
+    link = ""
+    onclick_attr = card_body.get("onclick")
+    if onclick_attr:
+        parts = onclick_attr.split("'")
+        if len(parts) >= 2:
+            link = parts[1]
+            if link.startswith("/"):
+                link = "https://whalebe.pknu.ac.kr" + link
+
+    programs.append({
+        "title": title,
+        "categories": categories,   # 수정된 부분
+        "description": description,
+        "recruitment_period": recruitment_period,
+        "operation_period": operation_period,
+        "capacity": capacity,
+        "applicants": applicants,
+        "href": link
+    })
+
+programs.sort(key=lambda x: parse_date(x["recruitment_period"]) or datetime.min, reverse=True)
+return programs
 ################################################################################
 #                       프로그램 알림 / 전송 함수                               #
 ################################################################################
