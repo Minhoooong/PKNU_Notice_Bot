@@ -249,7 +249,7 @@ async def fetch_dynamic_html(url: str) -> str:
 # 단일 날짜를 파싱하는 함수 (MM/DD 형식 추가)
 def parse_date(date_str: str):
     try:
-        logging.debug(f"입력된 날짜: {input_text} -> 파싱된 날짜: {filter_date}")
+        logging.debug(f"입력된 날짜: {date_str} -> 파싱된 날짜: {date_str}")
         if '.' in date_str:
             date_str = date_str.replace('.', '-')  # '.'을 '-'로 변경
             logging.debug(f"Parsing date: {date_str}")
