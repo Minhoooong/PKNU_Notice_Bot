@@ -311,7 +311,7 @@ async def fetch_url(url: str) -> str:
 ################################################################################
 #                       공지사항 파싱 함수                                      #
 ################################################################################
-async def get_school_notices(category: str = "") -> list:
+async def get_school_notices(category: str = "", filter_date: str = None) -> list:
     """
     부경대 공지사항 페이지(정적) 파싱: aiohttp + BeautifulSoup 사용
     """
@@ -333,12 +333,13 @@ async def get_school_notices(category: str = "") -> list:
                 href = a_tag.get("href")
                 if href.startswith("/"):
                     href = BASE_URL + href
-                elif href.startswith("?"):
-                    href = BASE_URL + "/main/163" + href
-                elif not href.startswith("http"):
-                    href = BASE_URL + "/" + href
                 department = user_td.get_text(strip=True)
                 date_ = date_td.get_text(strip=True)
+                
+                # 날짜 필터링 추가
+                if filter_date and filter_date != date_:
+                    continue
+
                 notices.append((title, href, department, date_))
         notices.sort(key=lambda x: parse_single_date(x[3]) or datetime.min, reverse=True)
         return notices
