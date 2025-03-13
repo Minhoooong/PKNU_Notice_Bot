@@ -246,16 +246,33 @@ async def fetch_dynamic_html(url: str) -> str:
 ################################################################################
 #                       기타 공통 함수                                          #
 ################################################################################
-def parse_date(date_str):
-    date_str = date_str.replace("\xa0", "").strip()  # \xa0 제거
-    formats = ["%Y-%m-%d", "%Y.%m.%d"]  # 가능한 형식 리스트
+def parse_date_range(date_str):
+    """ 날짜 범위 (예: 2025.03.01 ~ 2025.03.31) 처리 함수 """
+    try:
+        # 날짜 범위가 '~'를 포함하는지 확인
+        if "~" in date_str:
+            start_date_str, end_date_str = date_str.split("~")
+            start_date = parse_single_date(start_date_str.strip())
+            end_date = parse_single_date(end_date_str.strip())
+            if start_date and end_date:
+                return start_date, end_date
+        else:
+            # 범위가 아닌 경우, 단일 날짜를 처리
+            return parse_single_date(date_str.strip()), None
+    except Exception as e:
+        print(f"❌ Error: {e} - 날짜 범위 파싱 실패: {date_str}")
+        return None, None
+
+# 단일 날짜를 파싱하는 함수
+def parse_single_date(date_str):
+    formats = ["%Y-%m-%d", "%Y.%m.%d"]  # 가능한 날짜 형식
     for fmt in formats:
         try:
             return datetime.strptime(date_str, fmt)
         except ValueError:
             continue
     print(f"❌ Error: Could not parse date {date_str}")
-    return None  # 오류 시 None 반환
+    return None  # 파싱 실패 시 None 반환
 
 ################################################################################
 #                       기존 aiohttp로 사용하는 fetch_url (공지사항 용)         #
@@ -323,7 +340,7 @@ async def get_school_notices(category: str = "") -> list:
                 department = user_td.get_text(strip=True)
                 date_ = date_td.get_text(strip=True)
                 notices.append((title, href, department, date_))
-        notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
+        notices.sort(key=lambda x: parse_single_date(x[3]) or datetime.min, reverse=True)
         return notices
     except Exception:
         logging.exception("❌ Error in get_school_notices")
@@ -533,7 +550,7 @@ async def get_programs(user_filters: dict = None) -> list:
             "href": link
         })
     
-    programs.sort(key=lambda x: parse_date(x["recruitment_period"]) or datetime.min, reverse=True)
+    programs.sort(key=lambda x: parse_date_range(x["recruitment_period"]) or datetime.min, reverse=True)
     return programs
 ################################################################################
 #                       프로그램 알림 / 전송 함수                               #
@@ -866,13 +883,13 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
     input_text = message.text.strip()
     current_year = datetime.now().year
     full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
-    filter_date = parse_date(full_date_str)
+    filter_date = parse_single_date(full_date_str)
     if filter_date is None:
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
         return
 
     all_notices = await get_school_notices()
-    filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
+    filtered_notices = [n for n in all_notices if parse_single_date(n[3]) == filter_date]
     if not filtered_notices:
         await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
     else:
