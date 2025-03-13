@@ -903,9 +903,7 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
 ################################################################################
 #                      'catch_all' 핸들러 (기타 메시지)                          #
 ################################################################################
-@dp.message()
-async def catch_all(message: types.Message):
-    logging.debug(f"Catch-all handler received message: {message.text}")
+
 
 ################################################################################
 #                     새 공지사항 / 프로그램 자동 전송 (그룹채팅)               #
