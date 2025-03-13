@@ -29,6 +29,10 @@ URL = 'https://www.pknu.ac.kr/main/163'
 BASE_URL = 'https://www.pknu.ac.kr'
 CACHE_FILE = "announcements_seen.json"
 WHITELIST_FILE = "whitelist.json"
+PROGRAM_CACHE_FILE = "programs_seen.json"  # 비교과 프로그램 캐시 파일
+
+# 새 상수: 비교과 프로그램 페이지 URL (사이트의 필터 기능 활용)
+PROGRAM_URL = "https://whalebe.pknu.ac.kr/main/65"
 
 CATEGORY_CODES = {
     "전체": "",
@@ -52,20 +56,21 @@ class FilterState(StatesGroup):
     waiting_for_date = State()
     selecting_category = State()
 
-def load_whitelist() -> set:
+# --------------------- 화이트리스트 관련 함수 (구조 변경: {user_id: {"filters": {...}}}) ---------------------
+def load_whitelist() -> dict:
     if os.path.exists(WHITELIST_FILE):
         try:
             with open(WHITELIST_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return set(data.get("allowed_users", []))
+                return data.get("users", {})
         except Exception as e:
             logging.error(f"Whitelist 로드 오류: {e}", exc_info=True)
-    return set()
+    return {}
 
-def save_whitelist(whitelist: set) -> None:
+def save_whitelist(whitelist: dict) -> None:
     try:
         with open(WHITELIST_FILE, "w", encoding="utf-8") as f:
-            json.dump({"allowed_users": list(whitelist)}, f, ensure_ascii=False, indent=4)
+            json.dump({"users": whitelist}, f, ensure_ascii=False, indent=4)
     except Exception as e:
         logging.error(f"Whitelist 저장 오류: {e}", exc_info=True)
 
@@ -74,7 +79,7 @@ def push_whitelist_changes() -> None:
         subprocess.run(["git", "config", "user.email", "bot@example.com"], check=True)
         subprocess.run(["git", "config", "user.name", "공지봇"], check=True)
         subprocess.run(["git", "add", WHITELIST_FILE], check=True)
-        commit_message = "Update whitelist.json with new registrations"
+        commit_message = "Update whitelist.json with new registrations or filter changes"
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
         pat = os.environ.get("MY_PAT")
         if not pat:
@@ -86,9 +91,10 @@ def push_whitelist_changes() -> None:
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ whitelist.json 커밋 오류: {e}", exc_info=True)
 
-ALLOWED_USER_IDS = load_whitelist()
-logging.info(f"현재 화이트리스트: {ALLOWED_USER_IDS}")
+ALLOWED_USERS = load_whitelist()  # 형식: { "123456789": {"filters": {"옵션": bool, ...}}, ... }
+logging.info(f"현재 화이트리스트: {ALLOWED_USERS}")
 
+# --------------------- 공지사항 캐시 관련 함수 (기존) ---------------------
 def generate_cache_key(title: str, href: str) -> str:
     normalized = f"{title.strip().lower()}::{href.strip()}"
     return hashlib.md5(normalized.encode('utf-8')).hexdigest()
@@ -137,6 +143,52 @@ async def is_new_announcement(title: str, href: str) -> bool:
     save_cache(cache)
     return True
 
+# --------------------- 프로그램(비교과) 캐시 관련 함수 ---------------------
+def load_program_cache() -> dict:
+    if os.path.exists(PROGRAM_CACHE_FILE):
+        try:
+            with open(PROGRAM_CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except Exception as e:
+            logging.error(f"❌ 프로그램 캐시 로드 오류: {e}", exc_info=True)
+            return {}
+    return {}
+
+def save_program_cache(data: dict) -> None:
+    try:
+        with open(PROGRAM_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logging.error(f"❌ 프로그램 캐시 저장 오류: {e}", exc_info=True)
+
+def push_program_cache_changes() -> None:
+    try:
+        subprocess.run(["git", "config", "user.email", "bot@example.com"], check=True)
+        subprocess.run(["git", "config", "user.name", "공지봇"], check=True)
+        subprocess.run(["git", "add", PROGRAM_CACHE_FILE], check=True)
+        commit_message = "Update programs_seen.json with new programs"
+        subprocess.run(["git", "commit", "-m", commit_message], check=True)
+        pat = os.environ.get("MY_PAT")
+        if not pat:
+            logging.error("❌ MY_PAT 환경 변수가 설정되어 있지 않습니다.")
+            return
+        remote_url = f"https://{pat}@github.com/Minhoooong/PKNU_Notice_Bot.git"
+        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
+        logging.info("✅ 프로그램 캐시 파일이 저장소에 커밋되었습니다.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"❌ 프로그램 캐시 파일 커밋 오류: {e}", exc_info=True)
+
+def is_new_program(title: str, href: str) -> bool:
+    cache = load_program_cache()
+    key = generate_cache_key(title, href)
+    if key in cache:
+        return False
+    cache[key] = True
+    save_program_cache(cache)
+    return True
+
+# --------------------- 공통 함수 ---------------------
 def parse_date(date_str: str):
     try:
         return datetime.strptime(date_str, "%Y-%m-%d")
@@ -231,40 +283,108 @@ async def extract_content(url: str) -> tuple:
         logging.error(f"❌ Exception in extract_content for URL {url}: {e}", exc_info=True)
         return ("처리 중 오류가 발생했습니다.", [])
 
-async def check_for_new_notices(target_chat_id: str = None) -> list:
-    if target_chat_id is None:
-        target_chat_id = GROUP_CHAT_ID
-    logging.info("Checking for new notices...")
-    seen_announcements = load_cache()
-    logging.info(f"Loaded seen announcements: {seen_announcements}")
-    current_notices = await get_school_notices()
-    logging.info(f"Fetched current notices: {current_notices}")
-    new_notices = []
-    for title, href, department, date_ in current_notices:
-        key = generate_cache_key(title, href)
-        if key not in seen_announcements:
-            new_notices.append((title, href, department, date_))
-    logging.info(f"DEBUG: New notices detected: {new_notices}")
-    if new_notices:
-        for notice in new_notices:
-            await send_notification(notice, target_chat_id=target_chat_id)
-            key = generate_cache_key(notice[0], notice[1])
-            seen_announcements[key] = True
-        save_cache(seen_announcements)
-        push_cache_changes()
-        logging.info(f"DEBUG: Updated seen announcements (after update): {seen_announcements}")
-    else:
-        logging.info("✅ 새로운 공지사항이 없습니다.")
-    return new_notices
+# --------------------- 프로그램(비교과) 관련 함수 ---------------------
+def build_filter_url(user_filters: dict) -> str:
+    """
+    사용자 필터를 기반으로 사이트의 GET 파라미터를 생성합니다.
+    기본 파라미터는 고정값으로 채워두며, 사용자가 선택한 필터에 따라 값을 설정합니다.
+    """
+    base_params = {
+        "pageIndex": 1,
+        "action": "",
+        "order": 0,
+        "filterOF": 1,
+        "all": 0,
+        "intr": 0,
+        "ridx": 0,
+        "newAppr": 0,
+        "rstOk": 0,
+        "recvYn": 0,
+        "aIridx": 0,
+        "clsf": "",    # 학생 학습역량 강화
+        "type": "",    # 프로그램 유형 (다중값: 콤마 구분)
+        "diag": "",
+        "oneYy": 0,
+        "twoYy": 0,
+        "trdYy": 0,
+        "std1": 0,     # 1학년
+        "std2": 0,     # 2학년
+        "std3": 0,     # 3학년
+        "std4": 0,     # 4학년
+        "deptCd": "",
+        "searchKeyword": ""
+    }
+    # 필터 매핑: (GET 파라미터명, 값, 다중값 여부)
+    filter_mapping = {
+        "학생 학습역량 강화": ("clsf", "'A01'", False),
+        "1학년": ("std1", 1, False),
+        "2학년": ("std2", 1, False),
+        "3학년": ("std3", 1, False),
+        "4학년": ("std4", 1, False),
+        "멘토링": ("type", "멘토링", True),
+        "특강": ("type", "특강", True),
+        "워크숍": ("type", "워크숍", True),
+        "세미나": ("type", "세미나", True),
+        "캠프": ("type", "캠프", True),
+        "경진대회": ("type", "경진대회", True),
+    }
+    type_values = []
+    for key, selected in user_filters.items():
+        if selected and key in filter_mapping:
+            param_key, param_value, multi = filter_mapping[key]
+            if multi:
+                type_values.append(param_value)
+            else:
+                base_params[param_key] = param_value
+    if type_values:
+        base_params["type"] = ",".join(type_values)
+    url = PROGRAM_URL + "?" + urllib.parse.urlencode(base_params)
+    logging.info(f"생성된 필터 URL: {url}")
+    return url
 
-async def send_notification(notice: tuple, target_chat_id: str) -> None:
-    title, href, department, date_ = notice
+async def get_programs(user_filters: dict = None) -> list:
+    """
+    사용자 필터가 주어지면 이를 반영한 URL을 생성하여 필터링된 프로그램 페이지를 파싱합니다.
+    """
+    if user_filters is None:
+        url = PROGRAM_URL
+    else:
+        url = build_filter_url(user_filters)
+    html_content = await fetch_url(url)
+    if html_content is None:
+        logging.error("❌ 필터 적용된 프로그램 페이지를 불러올 수 없습니다.")
+        return []
+    soup = BeautifulSoup(html_content, 'html.parser')
+    programs = []
+    # 사이트 HTML 구조에 맞게 클래스명 수정 필요 (예: "program-item", "program-title", "program-date")
+    for item in soup.find_all("div", class_="program-item"):
+        title_elem = item.find("div", class_="program-title")
+        date_elem = item.find("span", class_="program-date")
+        link_elem = item.find("a", href=True)
+        if title_elem and date_elem and link_elem:
+            title = title_elem.get_text(strip=True)
+            date_str = date_elem.get_text(strip=True)
+            href = link_elem["href"]
+            if href.startswith("/"):
+                href = "https://whalebe.pknu.ac.kr" + href
+            programs.append({
+                "title": title,
+                "href": href,
+                "date": date_str
+            })
+    programs.sort(key=lambda x: parse_date(x["date"]) or datetime.min, reverse=True)
+    return programs
+
+async def send_program_notification(program: dict, target_chat_id: str) -> None:
+    title = program["title"]
+    href = program["href"]
+    date_ = program["date"]
     summary_text, image_urls = await extract_content(href)
     safe_summary = summary_text or ""
     message_text = (
-        f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
-        f"<b>{html.escape(title)}</b>\n\n"
-        f"{html.escape(date_)}\n\n"
+        f"[비교과 프로그램 업데이트]\n\n"
+        f"<b>{html.escape(title)}</b>\n"
+        f"날짜: {html.escape(date_)}\n"
         "______________________________________________\n"
         f"{safe_summary}\n\n"
     )
@@ -275,6 +395,151 @@ async def send_notification(notice: tuple, target_chat_id: str) -> None:
     )
     await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard)
 
+async def check_for_new_programs(target_chat_id: str) -> list:
+    logging.info("Checking for new programs...")
+    seen_programs = load_program_cache()
+    # 자동 전송은 기본(필터 없이 전체) 결과를 가져옴
+    current_programs = await get_programs()
+    new_programs = []
+    for program in current_programs:
+        # 프로그램 데이터 구조: 딕셔너리
+        key = generate_cache_key(program["title"], program["href"])
+        if key not in seen_programs:
+            new_programs.append(program)
+    if new_programs:
+        for program in new_programs:
+            await send_program_notification(program, target_chat_id=target_chat_id)
+            key = generate_cache_key(program["title"], program["href"])
+            seen_programs[key] = True
+        save_program_cache(seen_programs)
+        push_program_cache_changes()
+    return new_programs
+
+# --------------------- 개인 채팅: /start 명령어에서 "공지사항", "프로그램" 버튼 제공 ---------------------
+@dp.message(Command("start"))
+async def start_command(message: types.Message) -> None:
+    user_id_str = str(message.chat.id)
+    if user_id_str not in ALLOWED_USERS:
+        await message.answer("죄송합니다. 이 봇은 사용 권한이 없습니다.\n등록하려면 /register [숫자 코드]를 입력해 주세요.")
+        return
+    if message.chat.type == "private":
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="공지사항", callback_data="notice_menu"),
+             InlineKeyboardButton(text="프로그램", callback_data="compare_programs")]
+        ])
+        await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
+    else:
+        await message.answer("이 그룹 채팅은 자동 알림용입니다.")
+
+# "공지사항" 버튼 클릭 시 옵션 제공
+@dp.callback_query(lambda c: c.data == "notice_menu")
+async def notice_menu_handler(callback: CallbackQuery, state: FSMContext):
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"),
+             InlineKeyboardButton(text="📢전체 공지사항", callback_data="all_notices")]
+        ]
+    )
+    await callback.message.edit_text("공지사항 옵션을 선택하세요:", reply_markup=keyboard)
+    await callback.answer()
+
+# --------------------- 개인 채팅: 비교과(프로그램) 옵션 버튼 및 기능 ---------------------
+# 기존 "compare_programs" 버튼 → "나만의 프로그램" 및 "키워드 검색" 버튼 제공
+@dp.callback_query(lambda c: c.data == "compare_programs")
+async def compare_programs_handler(callback: CallbackQuery):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="나만의 프로그램", callback_data="my_programs")],
+        [InlineKeyboardButton(text="키워드 검색", callback_data="keyword_search")]
+    ])
+    await callback.message.edit_text("비교과 프로그램 옵션을 선택하세요.", reply_markup=keyboard)
+    await callback.answer()
+
+# "나만의 프로그램" 버튼 클릭 시: 필터가 미설정이면 필터 설정 UI를, 설정되어 있으면 사이트 필터 기능을 활용하여 프로그램 전송
+@dp.callback_query(lambda c: c.data == "my_programs")
+async def my_programs_handler(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    user_id_str = str(chat_id)
+    if user_id_str not in ALLOWED_USERS:
+        await callback.message.answer("등록된 사용자가 아닙니다. /register 명령어로 등록해 주세요.")
+        return
+    user_filter = ALLOWED_USERS[user_id_str].get("filters", {})
+    if not any(user_filter.values()):
+        keyboard = get_program_filter_keyboard(chat_id)
+        await callback.message.edit_text("현재 필터가 설정되어 있지 않습니다. 아래에서 필터를 설정해 주세요:", reply_markup=keyboard)
+        return
+    # 필터 설정이 되어 있으면, 사이트의 필터 기능을 활용하여 결과 페이지를 가져옴
+    programs = await get_programs(user_filter)
+    if not programs:
+        await callback.message.answer("선택하신 필터에 해당하는 프로그램이 없습니다.")
+    else:
+        for program in programs:
+            await send_program_notification(program, target_chat_id=callback.message.chat.id)
+    await callback.answer()
+
+# 프로그램 필터 설정 UI: 필터 키보드 생성 (사용자별 화이트리스트에 저장된 필터 사용)
+def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    options = [
+        "학생 학습역량 강화", "1학년", "2학년", "3학년", "4학년",
+        "멘토링", "특강", "워크숍", "세미나", "캠프", "경진대회"
+    ]
+    user_id_str = str(chat_id)
+    if user_id_str not in ALLOWED_USERS:
+        ALLOWED_USERS[user_id_str] = {"filters": {opt: False for opt in options}}
+    current = ALLOWED_USERS[user_id_str].get("filters", {opt: False for opt in options})
+    buttons = []
+    for opt in options:
+        text = f"{'✅' if current.get(opt, False) else ''} {opt}".strip()
+        buttons.append(InlineKeyboardButton(text=text, callback_data=f"toggle_program_{opt}"))
+    keyboard = InlineKeyboardMarkup(row_width=3)
+    keyboard.add(*buttons)
+    keyboard.add(InlineKeyboardButton(text="선택 완료", callback_data="filter_done_program"))
+    return keyboard
+
+# 필터 토글 (사용자가 각 옵션을 선택/해제)
+@dp.callback_query(lambda c: c.data.startswith("toggle_program_"))
+async def toggle_program_filter(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    user_id_str = str(chat_id)
+    option = callback.data.split("toggle_program_")[1]
+    if user_id_str not in ALLOWED_USERS:
+        ALLOWED_USERS[user_id_str] = {"filters": {option: True}}
+    else:
+        filters = ALLOWED_USERS[user_id_str].get("filters", {})
+        filters[option] = not filters.get(option, False)
+        ALLOWED_USERS[user_id_str]["filters"] = filters
+    save_whitelist(ALLOWED_USERS)
+    push_whitelist_changes()
+    keyboard = get_program_filter_keyboard(chat_id)
+    await callback.message.edit_text("필터를 선택하세요:", reply_markup=keyboard)
+    await callback.answer()
+
+# 필터 설정 완료 시
+@dp.callback_query(lambda c: c.data == "filter_done_program")
+async def filter_done_program_handler(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    user_id_str = str(chat_id)
+    user_filter = ALLOWED_USERS[user_id_str].get("filters", {})
+    selected = [opt for opt, chosen in user_filter.items() if chosen]
+    await callback.message.edit_text(f"선택한 필터: {', '.join(selected) if selected else '없음'}")
+    await callback.answer("필터 설정이 완료되었습니다.")
+
+# 키워드 검색 기능: 키워드 입력 유도
+@dp.callback_query(lambda c: c.data == "keyword_search")
+async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("검색할 키워드를 입력해 주세요:")
+    await state.set_state("keyword_search")
+    await callback.answer()
+
+@dp.message(lambda message: True)
+async def process_keyword_search(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state == "keyword_search":
+        keyword = message.text.strip()
+        await state.clear()
+        await message.answer(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
+        # 실제 키워드 검색 로직 추가 가능
+
+# --------------------- 기존 명령어 및 핸들러 ---------------------
 @dp.message(Command("register"))
 async def register_command(message: types.Message) -> None:
     if not message.text:
@@ -285,42 +550,36 @@ async def register_command(message: types.Message) -> None:
         await message.answer("등록하려면 '/register [숫자 코드]'를 입력해 주세요.")
         return
     code = parts[1].strip()
+    user_id_str = str(message.chat.id)
     if code == REGISTRATION_CODE:
-        user_id = message.chat.id
-        if user_id in ALLOWED_USER_IDS:
+        if user_id_str in ALLOWED_USERS:
             await message.answer("이미 등록되어 있습니다.")
         else:
-            ALLOWED_USER_IDS.add(user_id)
-            save_whitelist(ALLOWED_USER_IDS)
+            default_filters = {
+                "학생 학습역량 강화": False, "1학년": False, "2학년": False, "3학년": False, "4학년": False,
+                "멘토링": False, "특강": False, "워크숍": False, "세미나": False, "캠프": False, "경진대회": False
+            }
+            ALLOWED_USERS[user_id_str] = {"filters": default_filters}
+            save_whitelist(ALLOWED_USERS)
             push_whitelist_changes()
             await message.answer("등록 성공! 이제 개인 채팅 기능을 이용할 수 있습니다.")
-            logging.info(f"새 화이트리스트 등록: {user_id}")
+            logging.info(f"새 화이트리스트 등록: {user_id_str}")
     else:
         await message.answer("잘못된 코드입니다.")
 
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message) -> None:
-    if message.chat.id not in ALLOWED_USER_IDS:
+    user_id_str = str(message.chat.id)
+    if message.chat.type != "private":
+        return
+    if user_id_str not in ALLOWED_USERS:
         await message.answer("접근 권한이 없습니다.")
         return
-    new_notices = await check_for_new_notices(target_chat_id=GROUP_CHAT_ID)
+    new_notices = await check_for_new_notices(target_chat_id=message.chat.id)
     if new_notices:
-        await message.answer(f"📢 {len(new_notices)}개의 새로운 공지사항이 그룹 채팅에 전송되었습니다!")
+        await message.answer(f"📢 {len(new_notices)}개의 새로운 공지사항이 전송되었습니다!")
     else:
         await message.answer("✅ 새로운 공지사항이 없습니다.")
-
-@dp.message(Command("start"))
-async def start_command(message: types.Message) -> None:
-    if message.chat.id not in ALLOWED_USER_IDS:
-        await message.answer("죄송합니다. 이 봇은 사용 권한이 없습니다.\n등록하려면 /register [숫자 코드]를 입력해 주세요.")
-        return
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"),
-             InlineKeyboardButton(text="📢전체 공지사항", callback_data="all_notices")]
-        ]
-    )
-    await message.answer("안녕하세요! 공지사항 봇입니다.\n\n아래 버튼을 선택해 주세요:", reply_markup=keyboard)
 
 @dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
@@ -354,7 +613,8 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
 
 @dp.message()
 async def process_date_input(message: types.Message, state: FSMContext) -> None:
-    if message.chat.id not in ALLOWED_USER_IDS:
+    user_id_str = str(message.chat.id)
+    if user_id_str not in ALLOWED_USERS:
         await message.answer("접근 권한이 없습니다.")
         return
     current_state = await state.get_state()
@@ -377,8 +637,49 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
             await send_notification(notice, target_chat_id=message.chat.id)
     await state.clear()
 
+# --------------------- 그룹 채팅: 새 공지사항 및 프로그램 자동 전송 ---------------------
+async def check_for_new_notices(target_chat_id: str = None) -> list:
+    if target_chat_id is None:
+        target_chat_id = GROUP_CHAT_ID
+    logging.info("Checking for new notices...")
+    seen_announcements = load_cache()
+    current_notices = await get_school_notices()
+    new_notices = []
+    for title, href, department, date_ in current_notices:
+        key = generate_cache_key(title, href)
+        if key not in seen_announcements:
+            new_notices.append((title, href, department, date_))
+    if new_notices:
+        for notice in new_notices:
+            await send_notification(notice, target_chat_id=target_chat_id)
+            key = generate_cache_key(notice[0], notice[1])
+            seen_announcements[key] = True
+        save_cache(seen_announcements)
+        push_cache_changes()
+    return new_notices
+
+async def send_notification(notice: tuple, target_chat_id: str) -> None:
+    title, href, department, date_ = notice
+    summary_text, image_urls = await extract_content(href)
+    safe_summary = summary_text or ""
+    message_text = (
+        f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
+        f"<b>{html.escape(title)}</b>\n\n"
+        f"{html.escape(date_)}\n\n"
+        "______________________________________________\n"
+        f"{safe_summary}\n\n"
+    )
+    if image_urls:
+        message_text += "\n".join(image_urls) + "\n\n"
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
+    )
+    await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard)
+
 async def run_bot() -> None:
-    await check_for_new_notices()  # 기본적으로 GROUP_CHAT_ID로 전송됨
+    # 그룹 채팅에서는 공지사항과 비교과 프로그램 모두 자동 전송합니다.
+    await check_for_new_notices()
+    await check_for_new_programs(GROUP_CHAT_ID)
     try:
         logging.info("🚀 Starting bot polling for 10 minutes...")
         polling_task = asyncio.create_task(dp.start_polling(bot))
