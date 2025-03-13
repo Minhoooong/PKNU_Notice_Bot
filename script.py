@@ -251,6 +251,7 @@ def parse_date(date_str: str):
     try:
         if '.' in date_str:
             date_str = date_str.replace('.', '-')  # '.'을 '-'로 변경
+            logging.debug(f"Parsing date: {date_str}")
         return datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError as ve:
         logging.error(f"Date parsing error for {date_str}: {ve}", exc_info=True)
@@ -918,6 +919,7 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
     input_text = message.text.strip()
     current_year = datetime.now().year  # 현재 년도를 가져옵니다.
     full_date_str = f"{current_year}-{input_text.replace('/', '-')}"  # MM/DD -> YYYY-MM-DD로 변환
+    logging.debug(f"입력된 날짜: {input_text} -> 변환된 날짜: {full_date_str}")
     filter_date = parse_date(full_date_str)  # 수정된 날짜 파싱 함수 사용
     
     # 로그 추가: 날짜 파싱이 성공적으로 이루어졌는지 확인
@@ -936,9 +938,10 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
     # 로그: 공지사항 날짜 확인
     for notice in all_notices:
         notice_date = parse_date(notice[3])
-        logging.info(f"공지사항 제목: {notice[0]}, 날짜: {notice_date.strftime('%Y-%m-%d')}")
+        logging.debug(f"공지사항 제목: {notice[0]}, 날짜: {notice_date.strftime('%Y-%m-%d') if notice_date else 'Invalid date'}")
     
     filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
+    logging.debug(f"Filtered notices: {filtered_notices}")
     
     # 로그 추가: 공지사항이 필터링되는지 확인
     if filtered_notices:
