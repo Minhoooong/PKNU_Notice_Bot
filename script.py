@@ -486,11 +486,16 @@ async def get_programs(user_filters: dict = None) -> list:
             if len(spans) >= 2:
                 operation_period = spans[1].get_text(strip=True)
 
-        # 모집 인원 (예: "모집 인원 20명 / 17명 지원 중")
-        capacity_info = ""
-        capacity_elem = card_body.select_one("div.capacity-info")
-        if capacity_elem:
-            capacity_info = capacity_elem.get_text(strip=True)
+        # 모집 인원 및 지원 인원 추출
+        capacity_elem = card_body.select_one("span.total_member")
+        applicants_elem = card_body.select_one("span.volun")
+
+        # 숫자만 추출
+        capacity = re.search(r"\d+", capacity_elem.get_text(strip=True) if capacity_elem else "")
+        applicants = re.search(r"\d+", applicants_elem.get_text(strip=True) if applicants_elem else "")
+
+        capacity = capacity.group() if capacity else "정보 없음"
+        applicants = applicants.group() if applicants else "정보 없음"
 
         # 링크 (onclick 속성)
         link = ""
@@ -508,7 +513,8 @@ async def get_programs(user_filters: dict = None) -> list:
             "description": description,
             "recruitment_period": recruitment_period,
             "operation_period": operation_period,
-            "capacity_info": capacity_info,
+            "capacity": capacity,
+            "applicants": applicants,
             "href": link
         })
 
@@ -526,8 +532,17 @@ async def send_program_notification(program: dict, target_chat_id: str) -> None:
     description = html.escape(program.get("description", "설명이 없습니다."))
     recruitment_period = html.escape(program.get("recruitment_period", "모집 기간 정보 없음"))
     operation_period = html.escape(program.get("operation_period", "운영 기간 정보 없음"))
-    capacity_info = html.escape(program.get("capacity_info", "모집 인원 정보 없음"))
+    capacity_info = html.escape(program.get("capacity", "모집 인원 정보 없음"))
+    applicants = html.escape(program.get("applicants", "지원자 정보 없음"))
     href = html.escape(program.get("href", "#"))
+
+    # 모집 인원과 지원자 수 변환 (숫자만 추출)
+    try:
+        capacity_num = int(re.search(r"\d+", capacity_info).group()) if capacity_info.isdigit() else capacity_info
+        applicants_num = int(re.search(r"\d+", applicants).group()) if applicants.isdigit() else applicants
+        capacity_text = f"{capacity_num}명 / {applicants_num}명 지원"
+    except Exception:
+        capacity_text = "모집 인원 정보 없음"
 
     # 메시지 텍스트 구성
     message_text = (
@@ -537,7 +552,8 @@ async def send_program_notification(program: dict, target_chat_id: str) -> None:
         f"{description}\n\n"
         f"📅 <b>모집 기간:</b> {recruitment_period}\n"
         f"📅 <b>운영 기간:</b> {operation_period}\n"
-        f"👥 <b>{capacity_info}</b>\n"
+        f"👥 <b>{capacity_text}</b>\n"
+        f"🔗 <a href='{href}'>프로그램 링크</a>\n"
     )
 
     # 인라인 버튼 생성
