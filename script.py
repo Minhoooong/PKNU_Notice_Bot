@@ -60,7 +60,11 @@ CATEGORY_CODES = {
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler("logfile.log"), logging.StreamHandler()]
+    handlers=[
+        logging.FileHandler("logfile.log", encoding="utf-8"),
+        logging.StreamHandler(),
+        logging.handlers.RotatingFileHandler("logfile.log", maxBytes=10**6, backupCount=3)
+    ]
 )
 
 ################################################################################
@@ -215,17 +219,12 @@ def is_new_program(title: str, href: str) -> bool:
 #                       동적 로딩 페이지 가져오는 함수 (Playwright)             #
 ################################################################################
 async def fetch_dynamic_html(url: str) -> str:
-    """
-    JavaScript로 로드되는 콘텐츠를 포함한 최종 렌더링된 HTML을 가져옵니다 (Playwright).
-    """
     logging.debug(f"Playwright로 동적 페이지 요청 시작: {url}")
     try:
-        timeout_duration = 30000  # 30초
+        timeout_duration = 60000  # 60초로 늘림
         async with async_playwright() as p:
-            # headless=True (창 없는 모드)
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
-            # User-Agent 등 추가 헤더 설정 (필요 시)
             await page.set_extra_http_headers({
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -234,7 +233,6 @@ async def fetch_dynamic_html(url: str) -> str:
                 )
             })
             await page.goto(url, timeout=timeout_duration)
-            # 네트워크 요청이 잠잠해질 때까지 대기
             await page.wait_for_load_state("networkidle")
             content = await page.content()
             await browser.close()
@@ -243,7 +241,7 @@ async def fetch_dynamic_html(url: str) -> str:
     except Exception as e:
         logging.error(f"❌ Playwright dynamic fetch 오류: {url}, {e}", exc_info=True)
         return ""
-
+        
 ################################################################################
 #                       기타 공통 함수                                          #
 ################################################################################
@@ -259,7 +257,7 @@ def parse_single_date(date_str):
             return datetime.strptime(date_str, fmt)
         except ValueError:
             continue
-    print(f"❌ Error: Could not parse date {date_str}")
+    logging.error(f"❌ Error: Could not parse date {date_str}")
     return None
 
 # 날짜 범위 (예: 2025.03.01 ~ 2025.03.31) 처리 함수 수정
@@ -347,7 +345,7 @@ async def get_school_notices(category: str = "") -> list:
                 department = user_td.get_text(strip=True)
                 date_ = date_td.get_text(strip=True)
                 notices.append((title, href, department, date_))
-        notices.sort(key=lambda x: parse_single_date(x[3]) or datetime.min, reverse=True)
+        notices.sort(key=lambda x: parse_single_date(x[3]) if parse_single_date(x[3]) else datetime.min, reverse=True)
         return notices
     except Exception:
         logging.exception("❌ Error in get_school_notices")
