@@ -429,7 +429,7 @@ def build_filter_url(user_filters: dict) -> str:
 
 async def get_programs(user_filters: dict = None) -> list:
     """
-    JavaScript 동적 로딩된 페이지에서 프로그램 목록 파싱
+    JavaScript 동적 로딩된 페이지에서 비교과 프로그램 목록 파싱 (세부 정보 추가)
     """
     if user_filters is None:
         url = PROGRAM_URL
@@ -463,13 +463,34 @@ async def get_programs(user_filters: dict = None) -> list:
         title_elem = card_body.select_one("h4.card-title")
         title = title_elem.get_text(strip=True) if title_elem else "제목없음"
 
-        # 모집기간 (app_date의 첫 번째 col-12 내 두 번째 span)
-        date_str = ""
+        # 카테고리 정보 (예: 자연과학대학 > 경영대학 > 경영대학원)
+        category_elems = card_body.select("div.card-category span")
+        categories = [elem.get_text(strip=True) for elem in category_elems] if category_elems else []
+
+        # 설명 (프로그램 세부 내용)
+        description_elem = card_body.select_one("p.card-text")
+        description = description_elem.get_text(strip=True) if description_elem else "설명 없음"
+
+        # 모집 기간 (app_date의 첫 번째 col-12 내 두 번째 span)
+        recruitment_period = ""
         app_date_divs = card_body.select("div.row.app_date div.col-12")
         if app_date_divs:
             spans = app_date_divs[0].find_all("span")
             if len(spans) >= 2:
-                date_str = spans[1].get_text(strip=True)
+                recruitment_period = spans[1].get_text(strip=True)
+
+        # 운영 기간 (app_date의 두 번째 col-12 내 두 번째 span)
+        operation_period = ""
+        if len(app_date_divs) > 1:
+            spans = app_date_divs[1].find_all("span")
+            if len(spans) >= 2:
+                operation_period = spans[1].get_text(strip=True)
+
+        # 모집 인원 (예: "모집 인원 20명 / 17명 지원 중")
+        capacity_info = ""
+        capacity_elem = card_body.select_one("div.capacity-info")
+        if capacity_elem:
+            capacity_info = capacity_elem.get_text(strip=True)
 
         # 링크 (onclick 속성)
         link = ""
@@ -483,37 +504,49 @@ async def get_programs(user_filters: dict = None) -> list:
 
         programs.append({
             "title": title,
-            "href": link,
-            "date": date_str
+            "categories": categories,
+            "description": description,
+            "recruitment_period": recruitment_period,
+            "operation_period": operation_period,
+            "capacity_info": capacity_info,
+            "href": link
         })
 
-    programs.sort(key=lambda x: parse_date(x["date"]) or datetime.min, reverse=True)
+    programs.sort(key=lambda x: parse_date(x["recruitment_period"]) or datetime.min, reverse=True)
     return programs
-
 ################################################################################
 #                       프로그램 알림 / 전송 함수                               #
 ################################################################################
 async def send_program_notification(program: dict, target_chat_id: str) -> None:
-    title = program["title"]
-    href = program["href"]
-    date_ = program["date"]
-    summary_text, image_urls = await extract_content(href)  # 필요 시 수정
-    safe_summary = summary_text or ""
+    """비교과 프로그램 정보를 원본 페이지 구조에 가깝게 전송하는 함수"""
 
+    # 프로그램 정보 추출 및 HTML escape 처리
+    title = html.escape(program.get("title", "제목 없음"))
+    categories = " > ".join(map(html.escape, program.get("categories", [])))  # 카테고리 (리스트)
+    description = html.escape(program.get("description", "설명이 없습니다."))
+    recruitment_period = html.escape(program.get("recruitment_period", "모집 기간 정보 없음"))
+    operation_period = html.escape(program.get("operation_period", "운영 기간 정보 없음"))
+    capacity_info = html.escape(program.get("capacity_info", "모집 인원 정보 없음"))
+    href = html.escape(program.get("href", "#"))
+
+    # 메시지 텍스트 구성
     message_text = (
-        f"[비교과 프로그램 업데이트]\n\n"
-        f"<b>{html.escape(title)}</b>\n"
-        f"날짜: {html.escape(date_)}\n"
+        f"<b>{title}</b>\n"
+        f"<i>{categories}</i>\n"
         "______________________________________________\n"
-        f"{safe_summary}\n\n"
+        f"{description}\n\n"
+        f"📅 <b>모집 기간:</b> {recruitment_period}\n"
+        f"📅 <b>운영 기간:</b> {operation_period}\n"
+        f"👥 <b>{capacity_info}</b>\n"
     )
-    if image_urls:
-        message_text += "\n".join(image_urls) + "\n\n"
 
+    # 인라인 버튼 생성
     keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
+        inline_keyboard=[[InlineKeyboardButton(text="🔎 자세히 보기", url=href)]]
     )
-    await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard)
+
+    # 메시지 전송
+    await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard, parse_mode="HTML")
 
 async def check_for_new_programs(target_chat_id: str) -> list:
     logging.info("Checking for new programs...")
