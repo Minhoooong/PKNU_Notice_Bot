@@ -603,7 +603,10 @@ if __name__ == '__main__':
         async def notify_crash():
             try:
                 new_bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-                await new_bot.send_message(GROUP_CHAT_ID, f"봇이 오류로 종료되었습니다:\n{e}\n\n재실행 해주세요.")
+                # 여기서 개인 채팅 ID(예: 본인의 ID)로 메시지를 전송합니다.
+                personal_chat_id = CHAT_ID  # 또는 별도의 개인 채팅 ID로 설정
+                error_message = f"봇이 오류로 종료되었습니다:\n{e}\n\n재실행 해주세요."
+                await new_bot.send_message(personal_chat_id, error_message)
                 await new_bot.session.close()
             except Exception as notify_error:
                 logging.error(f"❌ 알림 전송 실패: {notify_error}", exc_info=True)
