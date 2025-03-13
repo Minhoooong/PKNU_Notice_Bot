@@ -351,15 +351,22 @@ async def get_programs(user_filters: dict = None) -> list:
         return []
     soup = BeautifulSoup(html_content, 'html.parser')
     programs = []
-    for item in soup.find_all("div", class_="program-item"):
-        title_elem = item.find("div", class_="program-title")
-        date_elem = item.find("span", class_="program-date")
-        link_elem = item.find("a", href=True)
+    # 'ul.list > li' 선택자로 프로그램 항목을 가져옵니다.
+    program_items = soup.select("ul.list > li")
+    if not program_items:
+        logging.debug("ul.list > li 선택자로 항목을 찾지 못했습니다.")
+    for item in program_items:
+        # 제목: <div class="subject"> 또는 <span class="tit">
+        title_elem = item.select_one("div.subject") or item.select_one("span.tit")
+        # 날짜: <span class="date">
+        date_elem = item.select_one("span.date")
+        # 링크: <a> 태그
+        link_elem = item.select_one("a[href]")
         if title_elem and date_elem and link_elem:
             title = title_elem.get_text(strip=True)
             date_str = date_elem.get_text(strip=True)
-            href = link_elem["href"]
-            if href.startswith("/"):
+            href = link_elem.get("href")
+            if href and href.startswith("/"):
                 href = "https://whalebe.pknu.ac.kr" + href
             programs.append({
                 "title": title,
