@@ -847,7 +847,7 @@ if __name__ == '__main__':
             try:
                 new_bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
                 await new_bot.send_message(
-                    GROUP_CHAT_ID,
+                    CHAT_ID,
                     f"봇이 오류로 종료되었습니다:\n{e}\n\n재실행 해주세요."
                 )
                 await new_bot.session.close()
