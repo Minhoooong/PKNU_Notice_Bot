@@ -7,7 +7,6 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     git \
     curl \
-    playwright \
     git-crypt \
     && rm -rf /var/lib/apt/lists/*
 
@@ -17,6 +16,7 @@ WORKDIR /app
 # 의존성 파일 복사 및 설치
 COPY requirements.txt /app/
 RUN pip3 install --no-cache-dir -r requirements.txt
+RUN playwright install --with-deps chromium
 
 # 전체 프로젝트 코드 복사
 COPY . /app
