@@ -696,27 +696,39 @@ async def compare_programs_handler(callback: CallbackQuery):
     ])
     await callback.message.edit_text("비교과 프로그램 옵션을 선택하세요.", reply_markup=keyboard)
 
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 @dp.callback_query(lambda c: c.data == "my_programs")
 async def my_programs_handler(callback: CallbackQuery):
+    """필터에 맞는 프로그램을 개별 메시지로 기존 그룹 채팅 형식으로 전송"""
+    
     await callback.answer()
     chat_id = callback.message.chat.id
     user_id_str = str(chat_id)
+    
+    # 허용된 사용자 확인
     if user_id_str not in ALLOWED_USERS:
         await callback.message.edit_text("등록된 사용자가 아닙니다. /register 명령어로 등록해 주세요.")
         return
+    
+    # 사용자 필터 확인
     user_filter = ALLOWED_USERS[user_id_str].get("filters", {})
     if not any(user_filter.values()):
         keyboard = get_program_filter_keyboard(chat_id)
         await callback.message.edit_text("현재 필터가 설정되어 있지 않습니다. 아래에서 필터를 설정해 주세요:", reply_markup=keyboard)
         return
+    
+    # 프로그램 가져오기
     programs = await get_programs(user_filter)
+    
+    # 필터에 맞는 프로그램이 없는 경우
     if not programs:
         await callback.message.edit_text("선택하신 필터에 해당하는 프로그램이 없습니다.")
-    else:
-        text = "선택하신 필터에 해당하는 프로그램:\n"
-        for program in programs:
-            text += f"- {program['title']} ({program['date']})\n"
-        await callback.message.edit_text(text)
+        return
+    
+    # 프로그램 개별 메시지 전송 (그룹 채팅 형식 그대로)
+    for program in programs:
+        await send_program_notification(program, chat_id)  # 기존 그룹 채팅 형식 유지
 
 def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     group1 = ["학생 학습역량 강화"]
