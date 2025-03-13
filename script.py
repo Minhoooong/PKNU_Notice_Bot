@@ -424,27 +424,29 @@ async def start_command(message: types.Message) -> None:
 # "공지사항" 버튼 클릭 시 옵션 제공
 @dp.callback_query(lambda c: c.data == "notice_menu")
 async def notice_menu_handler(callback: CallbackQuery, state: FSMContext):
+    # 즉시 응답하여 오래된 쿼리 문제 방지
+    await callback.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"),
          InlineKeyboardButton(text="📢전체 공지사항", callback_data="all_notices")]
     ])
     await callback.message.edit_text("공지사항 옵션을 선택하세요:", reply_markup=keyboard)
-    await callback.answer()
 
 # --------------------- 비교과(프로그램) 옵션 버튼 ---------------------
 @dp.callback_query(lambda c: c.data == "compare_programs")
 async def compare_programs_handler(callback: CallbackQuery):
+    await callback.answer()  # 즉시 응답
     # 두 버튼을 한 행에 배치
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="나만의 프로그램", callback_data="my_programs"),
          InlineKeyboardButton(text="키워드 검색", callback_data="keyword_search")]
     ])
     await callback.message.edit_text("비교과 프로그램 옵션을 선택하세요.", reply_markup=keyboard)
-    await callback.answer()
 
 # "나만의 프로그램" 버튼 클릭 시 필터 선택 UI 또는 결과 업데이트
 @dp.callback_query(lambda c: c.data == "my_programs")
 async def my_programs_handler(callback: CallbackQuery):
+    await callback.answer()  # 즉시 응답
     chat_id = callback.message.chat.id
     user_id_str = str(chat_id)
     if user_id_str not in ALLOWED_USERS:
@@ -459,16 +461,13 @@ async def my_programs_handler(callback: CallbackQuery):
     if not programs:
         await callback.message.edit_text("선택하신 필터에 해당하는 프로그램이 없습니다.")
     else:
-        # 예시: 프로그램 목록을 간단히 업데이트 (세부 내용은 send_program_notification을 별도로 호출하도록 할 수도 있음)
         text = "선택하신 필터에 해당하는 프로그램:\n"
         for program in programs:
             text += f"- {program['title']} ({program['date']})\n"
         await callback.message.edit_text(text)
-    await callback.answer()
-
+        
 # 프로그램 필터 설정 UI: 그룹화된 버튼 배열
 def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
-    # 그룹화: 그룹1 - 학생 학습역량 강화, 그룹2 - 학년, 그룹3 - 프로그램 유형
     group1 = ["학생 학습역량 강화"]
     group2 = ["1학년", "2학년", "3학년", "4학년"]
     group3 = ["멘토링", "특강", "워크숍", "세미나", "캠프", "경진대회"]
@@ -483,20 +482,21 @@ def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     # 그룹1 row
     row1 = [InlineKeyboardButton(text=f"{'✅' if current.get(opt, False) else ''} {opt}".strip(), callback_data=f"toggle_program_{opt}") for opt in group1]
     rows.append(row1)
-    # 그룹2 row (학년)
+    # 그룹2 row
     row2 = [InlineKeyboardButton(text=f"{'✅' if current.get(opt, False) else ''} {opt}".strip(), callback_data=f"toggle_program_{opt}") for opt in group2]
     rows.append(row2)
-    # 그룹3 rows (프로그램 유형) 3개씩
+    # 그룹3: 3개씩
     group3_buttons = [InlineKeyboardButton(text=f"{'✅' if current.get(opt, False) else ''} {opt}".strip(), callback_data=f"toggle_program_{opt}") for opt in group3]
     for i in range(0, len(group3_buttons), 3):
         rows.append(group3_buttons[i:i+3])
-    # 마지막 row에 선택 완료 버튼
+    # 마지막 행: 선택 완료 버튼
     rows.append([InlineKeyboardButton(text="선택 완료", callback_data="filter_done_program")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-# 필터 토글: 각 옵션 선택/해제 후 메시지 업데이트
+# 필터 토글: 옵션 선택/해제 후 UI 업데이트
 @dp.callback_query(lambda c: c.data.startswith("toggle_program_"))
 async def toggle_program_filter(callback: CallbackQuery):
+    await callback.answer()  # 즉시 응답
     chat_id = callback.message.chat.id
     user_id_str = str(chat_id)
     option = callback.data.split("toggle_program_")[1]
@@ -510,24 +510,23 @@ async def toggle_program_filter(callback: CallbackQuery):
     push_whitelist_changes()
     keyboard = get_program_filter_keyboard(chat_id)
     await callback.message.edit_text("필터를 선택하세요:", reply_markup=keyboard)
-    await callback.answer()
 
-# 필터 설정 완료: 선택한 필터 확인 후 메시지 업데이트
+# 필터 설정 완료: 선택한 필터 표시 및 메시지 업데이트
 @dp.callback_query(lambda c: c.data == "filter_done_program")
 async def filter_done_program_handler(callback: CallbackQuery):
+    await callback.answer()  # 즉시 응답
     chat_id = callback.message.chat.id
     user_id_str = str(chat_id)
     user_filter = ALLOWED_USERS[user_id_str].get("filters", {})
     selected = [opt for opt, chosen in user_filter.items() if chosen]
     await callback.message.edit_text(f"선택한 필터: {', '.join(selected) if selected else '없음'}")
-    await callback.answer("필터 설정이 완료되었습니다.")
-
-# 키워드 검색: 메시지 업데이트 방식으로 처리
+    
+# 키워드 검색: 일반 메시지로 결과 업데이트 (사용자가 보낸 메시지는 편집할 수 없으므로 answer() 사용)
 @dp.callback_query(lambda c: c.data == "keyword_search")
 async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()  # 즉시 응답
     await callback.message.edit_text("검색할 키워드를 입력해 주세요:")
     await state.set_state("keyword_search")
-    await callback.answer()
 
 @dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
 async def process_keyword_search(message: types.Message, state: FSMContext):
@@ -535,7 +534,7 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
     if current_state == "keyword_search":
         keyword = message.text.strip()
         await state.clear()
-        await message.edit_text(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
+        await message.answer(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
         # 실제 키워드 검색 로직 추가 가능
 
 # --------------------- /register 및 기타 명령어 ---------------------
@@ -593,22 +592,23 @@ async def manual_check_notices(message: types.Message) -> None:
 
 @dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()  # 즉시 응답
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
-    await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "all_notices")
 async def callback_all_notices(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()  # 즉시 응답
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=category, callback_data=f"category_{code}")]
         for category, code in CATEGORY_CODES.items()
     ])
     await callback.message.edit_text("원하는 카테고리를 선택하세요:", reply_markup=keyboard)
     await state.set_state(FilterState.selecting_category)
-    await callback.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("category_"))
 async def callback_category_selection(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()  # 즉시 응답
     category_code = callback.data.split("_")[1]
     notices = await get_school_notices(category_code)
     if not notices:
@@ -619,13 +619,12 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
             text += f"- {notice[0]} ({notice[3]})\n"
         await callback.message.edit_text(text)
     await state.clear()
-    await callback.answer()
 
 @dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
 async def process_date_input(message: types.Message, state: FSMContext) -> None:
     user_id_str = str(message.chat.id)
     if user_id_str not in ALLOWED_USERS:
-        await message.edit_text("접근 권한이 없습니다.")
+        await message.answer("접근 권한이 없습니다.")
         return
     current_state = await state.get_state()
     if current_state != FilterState.waiting_for_date.state:
@@ -635,17 +634,17 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
     full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
     filter_date = parse_date(full_date_str)
     if filter_date is None:
-        await message.edit_text("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
+        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
         return
     all_notices = await get_school_notices()
     filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
     if not filtered_notices:
-        await message.edit_text(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
+        await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
     else:
         text = f"📢 {input_text}의 공지사항:\n"
         for notice in filtered_notices:
             text += f"- {notice[0]} ({notice[3]})\n"
-        await message.edit_text(text, reply_markup=ReplyKeyboardRemove())
+        await message.answer(text, reply_markup=ReplyKeyboardRemove())
     await state.clear()
 
 @dp.message()
