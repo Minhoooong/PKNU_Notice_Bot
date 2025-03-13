@@ -554,7 +554,6 @@ async def send_program_notification(program: dict, target_chat_id: str) -> None:
         f"📅 <b>모집 기간:</b> {recruitment_period}\n"
         f"📅 <b>운영 기간:</b> {operation_period}\n"
         f"👥 <b>{capacity_text}</b>\n"
-        f"🔗 <a href='{href}'>프로그램 링크</a>\n"
     )
 
     # 인라인 버튼 생성
