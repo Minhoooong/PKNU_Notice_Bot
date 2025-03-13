@@ -692,45 +692,59 @@ async def manual_check_notices(message: types.Message) -> None:
 ################################################################################
 #                      인라인 콜백: 공지사항 메뉴, 날짜 필터 등                 #
 ################################################################################
-@dp.callback_query(lambda c: c.data == "notice_menu")
-async def notice_menu_handler(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"),
-         InlineKeyboardButton(text="📢전체 공지사항", callback_data="all_notices")]
-    ])
-    await callback.message.edit_text("공지사항 옵션을 선택하세요:", reply_markup=keyboard)
-
 @dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
-    await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
+    await callback.message.answer("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
+    await callback.answer()
 
 @dp.callback_query(lambda c: c.data == "all_notices")
 async def callback_all_notices(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=category, callback_data=f"category_{code}")]
             for category, code in CATEGORY_CODES.items()
         ]
     )
-    await callback.message.edit_text("원하는 카테고리를 선택하세요:", reply_markup=keyboard)
+    await callback.message.answer("원하는 카테고리를 선택하세요:", reply_markup=keyboard)
     await state.set_state(FilterState.selecting_category)
+    await callback.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("category_"))
 async def callback_category_selection(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
     category_code = callback.data.split("_")[1]
     notices = await get_school_notices(category_code)
     if not notices:
-        await callback.message.edit_text("해당 카테고리의 공지사항이 없습니다.")
+        await callback.message.answer("해당 카테고리의 공지사항이 없습니다.")
     else:
-        text = "해당 카테고리 공지사항:\n"
         for notice in notices[:7]:
-            text += f"- {notice[0]} ({notice[3]})\n"
-        await callback.message.edit_text(text)
+            await send_notification(notice, target_chat_id=callback.message.chat.id)
+    await state.clear()
+    await callback.answer()
+
+@dp.message()
+async def process_date_input(message: types.Message, state: FSMContext) -> None:
+    if message.chat.id not in ALLOWED_USER_IDS:
+        await message.answer("접근 권한이 없습니다.")
+        return
+    current_state = await state.get_state()
+    if current_state != FilterState.waiting_for_date.state:
+        return
+    input_text = message.text.strip()
+    current_year = datetime.now().year
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+    filter_date = parse_date(full_date_str)
+    if filter_date is None:
+        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
+        return
+    all_notices = await get_school_notices()
+    filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
+    if not filtered_notices:
+        await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
+    else:
+        await message.answer(f"📢 {input_text}의 공지사항을 불러옵니다.", reply_markup=ReplyKeyboardRemove())
+        for notice in filtered_notices:
+            await send_notification(notice, target_chat_id=message.chat.id)
     await state.clear()
 
 ################################################################################
@@ -860,59 +874,6 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
         await state.clear()
         await message.answer(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
         # 실제 키워드 검색 로직 추가 가능
-
-################################################################################
-#                      날짜 필터 / 공지사항 표시 로직                           #
-################################################################################
-# 날짜 입력을 받는 콜백 핸들러
-@dp.callback_query(lambda c: c.data == "filter_date")
-async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
-    await callback.answer()
-    await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
-    await state.set_state(FilterState.waiting_for_date)
-
-@dp.message(StateFilter(FilterState.waiting_for_date))
-async def process_date_input(message: types.Message, state: FSMContext):
-    date = message.text.strip()
-    if not re.match(r"^\d{2}/\d{2}$", date):
-        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
-        return
-
-    # 날짜 처리
-    await message.answer(f"입력하신 날짜: {date}")
-    await state.finish()  # 상태를 종료합니다.
-    
-@dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
-async def process_date_input(message: types.Message, state: FSMContext) -> None:
-    user_id_str = str(message.chat.id)
-    if user_id_str not in ALLOWED_USERS:
-        await message.answer("접근 권한이 없습니다.")
-        return
-    current_state = await state.get_state()
-    if current_state != FilterState.waiting_for_date.state:
-        # 다른 일반 메시지 처리 로직이 있으면 여기서 처리
-        return
-
-    # 날짜 입력 로직
-    input_text = message.text.strip()
-    current_year = datetime.now().year
-    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
-    filter_date = parse_single_date(full_date_str)
-    if filter_date is None:
-        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
-        return
-
-    all_notices = await get_school_notices()
-    filtered_notices = [n for n in all_notices if parse_single_date(n[3]) == filter_date]
-    if not filtered_notices:
-        await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
-    else:
-        text = f"📢 {input_text}의 공지사항:\n"
-        for notice in filtered_notices:
-            text += f"- {notice[0]} ({notice[3]})\n"
-        await message.answer(text, reply_markup=ReplyKeyboardRemove())
-
-    await state.clear()
 
 ################################################################################
 #                      'catch_all' 핸들러 (기타 메시지)                          #
