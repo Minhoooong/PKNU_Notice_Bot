@@ -249,6 +249,9 @@ async def fetch_dynamic_html(url: str) -> str:
 # 단일 날짜를 파싱하는 함수 (MM/DD 형식 추가)
 def parse_date(date_str: str):
     try:
+        # 'YYYY.MM.DD' 형식으로 날짜를 변환
+        if '.' in date_str:
+            date_str = date_str.replace('.', '-')  # '.'을 '-'로 변경
         return datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError as ve:
         logging.error(f"Date parsing error for {date_str}: {ve}", exc_info=True)
