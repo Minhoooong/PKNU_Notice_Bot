@@ -932,6 +932,12 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
 
     # 공지사항 필터링
     all_notices = await get_school_notices()
+    
+    # 로그: 공지사항 날짜 확인
+    for notice in all_notices:
+        notice_date = parse_single_date(notice[3])
+        logging.info(f"공지사항 제목: {notice[0]}, 날짜: {notice_date.strftime('%Y-%m-%d')}")
+    
     filtered_notices = [n for n in all_notices if parse_single_date(n[3]) == filter_date]
     
     # 로그 추가: 공지사항이 필터링되는지 확인
