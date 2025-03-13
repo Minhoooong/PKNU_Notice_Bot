@@ -18,7 +18,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
-from playwright.async_api import async_playwright  # 추가: Playwright
+from playwright.async_api import async_playwright  # Playwright 추가
 
 # 환경 변수 / 토큰 / 상수
 aclient = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -32,7 +32,7 @@ CACHE_FILE = "announcements_seen.json"
 WHITELIST_FILE = "whitelist.json"
 PROGRAM_CACHE_FILE = "programs_seen.json"  # 비교과 프로그램 캐시 파일
 
-# 새 상수: 비교과 프로그램 페이지 URL (사이트의 필터 기능 활용)
+# 비교과 프로그램 페이지 URL (사이트의 필터 기능 활용)
 PROGRAM_URL = "https://whalebe.pknu.ac.kr/main/65"
 
 CATEGORY_CODES = {
@@ -92,7 +92,7 @@ def push_whitelist_changes() -> None:
     except subprocess.CalledProcessError as e:
         logging.error(f"❌ whitelist.json 커밋 오류: {e}", exc_info=True)
 
-ALLOWED_USERS = load_whitelist()  # 형식: { "123456789": {"filters": {"옵션": bool, ...}}, ... }
+ALLOWED_USERS = load_whitelist()  # { "user_id": {"filters": {...}}, ... }
 logging.info(f"현재 화이트리스트: {ALLOWED_USERS}")
 
 # --------------------- 캐시 관련 함수 ---------------------
@@ -196,31 +196,7 @@ def parse_date(date_str: str):
         logging.error(f"Date parsing error for {date_str}: {ve}", exc_info=True)
         return None
 
-# 기존 aiohttp 방식
-async def fetch_url(url: str) -> str:
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-    }
-    try:
-        logging.debug(f"요청 시작: {url}")
-        timeout_duration = 30
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(url, timeout=timeout_duration) as response:
-                if response.status != 200:
-                    logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
-                    return None
-                text = await response.text()
-                logging.debug(f"요청 성공: {url} - 응답 길이: {len(text)}")
-                return text
-    except asyncio.TimeoutError:
-        logging.error(f"❌ 타임아웃 오류 발생 (타임아웃: {timeout_duration}초): {url}")
-        return None
-    except Exception as e:
-        logging.error(f"❌ URL 요청 오류: {url}, {e}", exc_info=True)
-        return None
-
-# 새 함수: Playwright를 사용하여 동적 콘텐츠 렌더링 후 HTML 반환
+# 기존 aiohttp 요청 대신 Playwright를 사용하여 동적 렌더링된 HTML을 가져옴
 async def fetch_dynamic_html(url: str) -> str:
     try:
         async with async_playwright() as p:
@@ -236,20 +212,19 @@ async def fetch_dynamic_html(url: str) -> str:
         logging.error(f"❌ 동적 HTML 가져오기 오류: {url}, {e}", exc_info=True)
         return None
 
-# 동적 페이지의 프로그램 목록을 파싱하도록 수정한 get_programs 함수
+# 동적 HTML을 사용하여 프로그램 목록 파싱
 async def get_programs(user_filters: dict = None) -> list:
     if user_filters is None:
         url = PROGRAM_URL
     else:
         url = build_filter_url(user_filters)
-    # 동적 콘텐츠를 가져오기 위해 fetch_dynamic_html 사용
     html_content = await fetch_dynamic_html(url)
     if html_content is None:
         logging.error("❌ 필터 적용된 프로그램 페이지를 동적 렌더링으로 불러올 수 없습니다.")
         return []
     soup = BeautifulSoup(html_content, 'html.parser')
     programs = []
-    # ul.flex-wrap > li 선택자로 프로그램 항목 선택
+    # "ul.flex-wrap > li" 선택자로 프로그램 항목 선택
     program_items = soup.select("ul.flex-wrap > li")
     if not program_items:
         logging.debug("No 'ul.flex-wrap > li' elements found. Trying alternative selectors...")
