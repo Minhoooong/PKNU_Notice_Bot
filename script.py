@@ -409,7 +409,6 @@ async def check_for_new_programs(target_chat_id: str) -> list:
     current_programs = await get_programs()
     new_programs = []
     for program in current_programs:
-        # 프로그램 데이터 구조: 딕셔너리
         key = generate_cache_key(program["title"], program["href"])
         if key not in seen_programs:
             new_programs.append(program)
@@ -451,7 +450,6 @@ async def notice_menu_handler(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 # --------------------- 개인 채팅: 비교과(프로그램) 옵션 버튼 및 기능 ---------------------
-# 기존 "compare_programs" 버튼 → "나만의 프로그램" 및 "키워드 검색" 버튼 제공
 @dp.callback_query(lambda c: c.data == "compare_programs")
 async def compare_programs_handler(callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -537,7 +535,7 @@ async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
     await state.set_state("keyword_search")
     await callback.answer()
 
-@dp.message(lambda message: True)
+@dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
 async def process_keyword_search(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     if current_state == "keyword_search":
@@ -546,7 +544,7 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
         await message.answer(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
         # 실제 키워드 검색 로직 추가 가능
 
-# --------------------- 기존 명령어 및 핸들러 ---------------------
+# --------------------- /register 및 기타 명령어 핸들러 ---------------------
 @dp.message(Command("register"))
 async def register_command(message: types.Message) -> None:
     logging.debug(f"Register command invoked by {message.chat.id}: {message.text}")
@@ -584,32 +582,6 @@ async def register_command(message: types.Message) -> None:
     else:
         await message.answer("잘못된 코드입니다. '/register [숫자 코드]' 형식으로 정확히 입력해 주세요.")
         logging.debug(f"User {user_id_str} provided invalid registration code: {code}")
-
-@dp.message(lambda message: not message.text.startswith("/"))
-async def process_date_input(message: types.Message, state: FSMContext) -> None:
-    user_id_str = str(message.chat.id)
-    if user_id_str not in ALLOWED_USERS:
-        await message.answer("접근 권한이 없습니다.")
-        return
-    current_state = await state.get_state()
-    if current_state != FilterState.waiting_for_date.state:
-        return
-    input_text = message.text.strip()
-    current_year = datetime.now().year
-    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
-    filter_date = parse_date(full_date_str)
-    if filter_date is None:
-        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
-        return
-    all_notices = await get_school_notices()
-    filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
-    if not filtered_notices:
-        await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
-    else:
-        await message.answer(f"📢 {input_text}의 공지사항을 불러옵니다.", reply_markup=ReplyKeyboardRemove())
-        for notice in filtered_notices:
-            await send_notification(notice, target_chat_id=message.chat.id)
-    await state.clear()
 
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message) -> None:
@@ -655,7 +627,7 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
     await state.clear()
     await callback.answer()
 
-@dp.message()
+@dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
 async def process_date_input(message: types.Message, state: FSMContext) -> None:
     user_id_str = str(message.chat.id)
     if user_id_str not in ALLOWED_USERS:
@@ -680,6 +652,12 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
         for notice in filtered_notices:
             await send_notification(notice, target_chat_id=message.chat.id)
     await state.clear()
+
+@dp.message()
+async def catch_all(message: types.Message):
+    # 기본적으로 "/"로 시작하지 않는 일반 메시지 처리
+    # 이 핸들러는 다른 조건에 걸리지 않은 메시지를 처리합니다.
+    logging.debug(f"Catch-all handler received message: {message.text}")
 
 # --------------------- 그룹 채팅: 새 공지사항 및 프로그램 자동 전송 ---------------------
 async def check_for_new_notices(target_chat_id: str = None) -> list:
