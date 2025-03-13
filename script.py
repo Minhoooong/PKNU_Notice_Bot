@@ -863,9 +863,8 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
 ################################################################################
 #                      날짜 필터 / 공지사항 표시 로직                           #
 ################################################################################
-# 필터 상태 클래스 예시
-class FilterState:
-    waiting_for_date = "waiting_for_date"
+class FilterState(StatesGroup):
+    waiting_for_date = State()
 
 # 날짜 입력을 받는 콜백 핸들러
 @dp.callback_query(lambda c: c.data == "filter_date")
@@ -875,7 +874,7 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
     await state.set_state(FilterState.waiting_for_date)
 
 # 날짜 입력 처리 핸들러 (aiogram 3.x 방식으로 변경)
-@dp.message(FilterState.waiting_for_date)
+@dp.message(filters.StateFilter(FilterState.waiting_for_date))
 async def process_date_input(message: types.Message, state: FSMContext):
     date = message.text.strip()
     
