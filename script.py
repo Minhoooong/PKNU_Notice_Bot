@@ -245,12 +245,16 @@ async def fetch_dynamic_html(url: str) -> str:
 ################################################################################
 #                       기타 공통 함수                                          #
 ################################################################################
-def parse_date(date_str: str):
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d")
-    except ValueError as ve:
-        logging.error(f"Date parsing error for {date_str}: {ve}", exc_info=True)
-        return None
+def parse_date(date_str):
+    date_str = date_str.replace("\xa0", "").strip()  # \xa0 제거
+    formats = ["%Y-%m-%d", "%Y.%m.%d"]  # 가능한 형식 리스트
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    print(f"❌ Error: Could not parse date {date_str}")
+    return None  # 오류 시 None 반환
 
 ################################################################################
 #                       기존 aiohttp로 사용하는 fetch_url (공지사항 용)         #
@@ -323,6 +327,49 @@ async def get_school_notices(category: str = "") -> list:
     except Exception:
         logging.exception("❌ Error in get_school_notices")
         return []
+
+async def summarize_text(text: str) -> str:
+    if not text or not text.strip():
+        return "요약할 수 없는 공지입니다."
+    prompt = (
+        f"아래의 텍스트를 3~5 문장으로 간결하고 명확하게 요약해 주세요. "
+        "각 핵심 사항은 별도의 문단이나 항목으로 구분하며, 불필요한 중복은 제거하고, "
+        "강조 시 <b> 태그만 사용하세요.:\n\n"
+        f"{text}\n\n요약:"
+    )
+    try:
+        response = await aclient.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=500
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
+        return "요약할 수 없는 공지입니다."
+
+async def extract_content(url: str) -> tuple:
+    try:
+        html_content = await fetch_url(url)
+        if not html_content or not html_content.strip():
+            logging.error(f"❌ Failed to fetch content: {url}")
+            return ("페이지를 불러올 수 없습니다.", [])
+        soup = BeautifulSoup(html_content, 'html.parser')
+        container = soup.find("div", class_="bdvTxt_wrap") or soup
+        paragraphs = container.find_all('p')
+        if not paragraphs:
+            logging.error(f"❌ No text content found in {url}")
+            return ("", [])
+        raw_text = ' '.join(para.get_text(separator=" ", strip=True) for para in paragraphs)
+        summary_text = await summarize_text(raw_text) if raw_text.strip() else ""
+        images = [urllib.parse.urljoin(url, img['src'])
+                  for img in container.find_all('img')
+                  if "/upload/" in img.get('src', '')]
+        return (summary_text, images)
+    except Exception as e:
+        logging.error(f"❌ Exception in extract_content for URL {url}: {e}", exc_info=True)
+        return ("처리 중 오류가 발생했습니다.", [])
 
 ################################################################################
 #                       프로그램(비교과) 파싱 함수 (Playwright 사용)            #
