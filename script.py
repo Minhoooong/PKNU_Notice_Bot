@@ -14,6 +14,7 @@ import urllib.parse
 from datetime import datetime
 
 import aiohttp
+from html import escape
 from aiogram import Bot, Dispatcher, types
 from aiogram.client.bot import DefaultBotProperties
 from aiogram.filters import Command
