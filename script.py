@@ -479,10 +479,11 @@ def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     for opt in options:
         text = f"{'✅' if current.get(opt, False) else ''} {opt}".strip()
         buttons.append(InlineKeyboardButton(text=text, callback_data=f"toggle_program_{opt}"))
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[], row_width=3)
-    keyboard.add(*buttons)
-    keyboard.add(InlineKeyboardButton(text="선택 완료", callback_data="filter_done_program"))
-    return keyboard
+    # 그룹화: row_width=3
+    rows = [buttons[i:i+3] for i in range(0, len(buttons), 3)]
+    # 마지막 행에 선택 완료 버튼 추가
+    rows.append([InlineKeyboardButton(text="선택 완료", callback_data="filter_done_program")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 # 필터 토글 (사용자가 각 옵션을 선택/해제)
 @dp.callback_query(lambda c: c.data.startswith("toggle_program_"))
