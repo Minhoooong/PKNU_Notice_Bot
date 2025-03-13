@@ -56,7 +56,7 @@ class FilterState(StatesGroup):
     waiting_for_date = State()
     selecting_category = State()
 
-# --------------------- 화이트리스트 관련 함수 (구조 변경: {user_id: {"filters": {...}}}) ---------------------
+# --------------------- 화이트리스트 관련 함수 ---------------------
 def load_whitelist() -> dict:
     if os.path.exists(WHITELIST_FILE):
         try:
@@ -83,7 +83,7 @@ def push_whitelist_changes() -> None:
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
         pat = os.environ.get("MY_PAT")
         if not pat:
-            logging.error("❌ MY_PAT 환경 변수가 설정되어 있지 않습니다.")
+            logging.error("❌ MY_PAT 환경 변수가 설정되지 않았습니다.")
             return
         remote_url = f"https://{pat}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
@@ -94,7 +94,7 @@ def push_whitelist_changes() -> None:
 ALLOWED_USERS = load_whitelist()  # 형식: { "123456789": {"filters": {"옵션": bool, ...}}, ... }
 logging.info(f"현재 화이트리스트: {ALLOWED_USERS}")
 
-# --------------------- 공지사항 캐시 관련 함수 (기존) ---------------------
+# --------------------- 공지사항 및 프로그램 캐시 관련 함수 ---------------------
 def generate_cache_key(title: str, href: str) -> str:
     normalized = f"{title.strip().lower()}::{href.strip()}"
     return hashlib.md5(normalized.encode('utf-8')).hexdigest()
@@ -126,7 +126,7 @@ def push_cache_changes() -> None:
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
         pat = os.environ.get("MY_PAT")
         if not pat:
-            logging.error("❌ MY_PAT 환경 변수가 설정되어 있지 않습니다.")
+            logging.error("❌ MY_PAT 환경 변수가 설정되지 않았습니다.")
             return
         remote_url = f"https://{pat}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
@@ -143,7 +143,6 @@ async def is_new_announcement(title: str, href: str) -> bool:
     save_cache(cache)
     return True
 
-# --------------------- 프로그램(비교과) 캐시 관련 함수 ---------------------
 def load_program_cache() -> dict:
     if os.path.exists(PROGRAM_CACHE_FILE):
         try:
@@ -171,7 +170,7 @@ def push_program_cache_changes() -> None:
         subprocess.run(["git", "commit", "-m", commit_message], check=True)
         pat = os.environ.get("MY_PAT")
         if not pat:
-            logging.error("❌ MY_PAT 환경 변수가 설정되어 있지 않습니다.")
+            logging.error("❌ MY_PAT 환경 변수가 설정되지 않았습니다.")
             return
         remote_url = f"https://{pat}@github.com/Minhoooong/PKNU_Notice_Bot.git"
         subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
@@ -199,7 +198,7 @@ def parse_date(date_str: str):
 async def fetch_url(url: str) -> str:
     try:
         logging.debug(f"요청 시작: {url}")
-        timeout_duration = 30  # 타임아웃을 30초로 설정
+        timeout_duration = 30
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=timeout_duration) as response:
                 if response.status != 200:
@@ -292,10 +291,6 @@ async def extract_content(url: str) -> tuple:
 
 # --------------------- 프로그램(비교과) 관련 함수 ---------------------
 def build_filter_url(user_filters: dict) -> str:
-    """
-    사용자 필터를 기반으로 사이트의 GET 파라미터를 생성합니다.
-    기본 파라미터는 고정값으로 채워두며, 사용자가 선택한 필터에 따라 값을 설정합니다.
-    """
     base_params = {
         "pageIndex": 1,
         "action": "",
@@ -314,14 +309,13 @@ def build_filter_url(user_filters: dict) -> str:
         "oneYy": 0,
         "twoYy": 0,
         "trdYy": 0,
-        "std1": 0,     # 1학년
-        "std2": 0,     # 2학년
-        "std3": 0,     # 3학년
-        "std4": 0,     # 4학년
+        "std1": 0,
+        "std2": 0,
+        "std3": 0,
+        "std4": 0,
         "deptCd": "",
         "searchKeyword": ""
     }
-    # 필터 매핑: (GET 파라미터명, 값, 다중값 여부)
     filter_mapping = {
         "학생 학습역량 강화": ("clsf", "'A01'", False),
         "1학년": ("std1", 1, False),
@@ -350,9 +344,6 @@ def build_filter_url(user_filters: dict) -> str:
     return url
 
 async def get_programs(user_filters: dict = None) -> list:
-    """
-    사용자 필터가 주어지면 이를 반영한 URL을 생성하여 필터링된 프로그램 페이지를 파싱합니다.
-    """
     if user_filters is None:
         url = PROGRAM_URL
     else:
@@ -363,7 +354,6 @@ async def get_programs(user_filters: dict = None) -> list:
         return []
     soup = BeautifulSoup(html_content, 'html.parser')
     programs = []
-    # 사이트 HTML 구조에 맞게 클래스명 수정 필요 (예: "program-item", "program-title", "program-date")
     for item in soup.find_all("div", class_="program-item"):
         title_elem = item.find("div", class_="program-title")
         date_elem = item.find("span", class_="program-date")
@@ -397,15 +387,12 @@ async def send_program_notification(program: dict, target_chat_id: str) -> None:
     )
     if image_urls:
         message_text += "\n".join(image_urls) + "\n\n"
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard)
 
 async def check_for_new_programs(target_chat_id: str) -> list:
     logging.info("Checking for new programs...")
     seen_programs = load_program_cache()
-    # 자동 전송은 기본(필터 없이 전체) 결과를 가져옴
     current_programs = await get_programs()
     new_programs = []
     for program in current_programs:
@@ -440,12 +427,10 @@ async def start_command(message: types.Message) -> None:
 # "공지사항" 버튼 클릭 시 옵션 제공
 @dp.callback_query(lambda c: c.data == "notice_menu")
 async def notice_menu_handler(callback: CallbackQuery, state: FSMContext):
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"),
-             InlineKeyboardButton(text="📢전체 공지사항", callback_data="all_notices")]
-        ]
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📅날짜 입력", callback_data="filter_date"),
+         InlineKeyboardButton(text="📢전체 공지사항", callback_data="all_notices")]
+    ])
     await callback.message.edit_text("공지사항 옵션을 선택하세요:", reply_markup=keyboard)
     await callback.answer()
 
@@ -472,7 +457,6 @@ async def my_programs_handler(callback: CallbackQuery):
         keyboard = get_program_filter_keyboard(chat_id)
         await callback.message.edit_text("현재 필터가 설정되어 있지 않습니다. 아래에서 필터를 설정해 주세요:", reply_markup=keyboard)
         return
-    # 필터 설정이 되어 있으면, 사이트의 필터 기능을 활용하여 결과 페이지를 가져옴
     programs = await get_programs(user_filter)
     if not programs:
         await callback.message.answer("선택하신 필터에 해당하는 프로그램이 없습니다.")
@@ -495,7 +479,7 @@ def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     for opt in options:
         text = f"{'✅' if current.get(opt, False) else ''} {opt}".strip()
         buttons.append(InlineKeyboardButton(text=text, callback_data=f"toggle_program_{opt}"))
-    keyboard = InlineKeyboardMarkup(row_width=3)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[], row_width=3)
     keyboard.add(*buttons)
     keyboard.add(InlineKeyboardButton(text="선택 완료", callback_data="filter_done_program"))
     return keyboard
@@ -605,12 +589,10 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
 
 @dp.callback_query(lambda c: c.data == "all_notices")
 async def callback_all_notices(callback: CallbackQuery, state: FSMContext) -> None:
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=category, callback_data=f"category_{code}")]
-            for category, code in CATEGORY_CODES.items()
-        ]
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=category, callback_data=f"category_{code}")]
+        for category, code in CATEGORY_CODES.items()
+    ])
     await callback.message.answer("원하는 카테고리를 선택하세요:", reply_markup=keyboard)
     await state.set_state(FilterState.selecting_category)
     await callback.answer()
@@ -655,8 +637,6 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
 
 @dp.message()
 async def catch_all(message: types.Message):
-    # 기본적으로 "/"로 시작하지 않는 일반 메시지 처리
-    # 이 핸들러는 다른 조건에 걸리지 않은 메시지를 처리합니다.
     logging.debug(f"Catch-all handler received message: {message.text}")
 
 # --------------------- 그룹 채팅: 새 공지사항 및 프로그램 자동 전송 ---------------------
@@ -693,13 +673,10 @@ async def send_notification(notice: tuple, target_chat_id: str) -> None:
     )
     if image_urls:
         message_text += "\n".join(image_urls) + "\n\n"
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard)
 
 async def run_bot() -> None:
-    # 그룹 채팅에서는 공지사항과 비교과 프로그램 모두 자동 전송합니다.
     await check_for_new_notices()
     await check_for_new_programs(GROUP_CHAT_ID)
     try:
