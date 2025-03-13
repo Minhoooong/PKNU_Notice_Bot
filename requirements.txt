@@ -2,3 +2,4 @@ aiohttp
 aiogram
 beautifulsoup4
 openai
+playwright
