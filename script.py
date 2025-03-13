@@ -868,6 +868,7 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
     if filter_date is None:
+        logging.error(f"날짜 파싱 실패: {input_text}")  # 로그에 실패한 날짜를 기록
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
         return
 
