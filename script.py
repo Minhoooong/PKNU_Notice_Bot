@@ -246,8 +246,24 @@ async def fetch_dynamic_html(url: str) -> str:
 ################################################################################
 #                       기타 공통 함수                                          #
 ################################################################################
+# 단일 날짜를 파싱하는 함수 (MM/DD 형식 추가)
+def parse_single_date(date_str):
+    formats = ["%Y-%m-%d", "%Y.%m.%d", "%m/%d"]  # MM/DD 형식 추가
+    current_year = datetime.now().year
+    for fmt in formats:
+        try:
+            if fmt == "%m/%d":
+                # MM/DD 형식은 현재 연도를 추가해서 처리
+                date_str = f"{current_year}-{date_str}"
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    print(f"❌ Error: Could not parse date {date_str}")
+    return None  # 파싱 실패 시 None 반환
+
+# 날짜 범위 (예: 2025.03.01 ~ 2025.03.31) 처리 함수 수정
 def parse_date_range(date_str):
-    """ 날짜 범위 (예: 2025.03.01 ~ 2025.03.31) 처리 함수 """
+    """ 날짜 범위 (예: 03/01 ~ 03/31) 처리 함수 수정 """
     try:
         # 날짜 범위가 '~'를 포함하는지 확인
         if "~" in date_str:
@@ -262,17 +278,6 @@ def parse_date_range(date_str):
     except Exception as e:
         print(f"❌ Error: {e} - 날짜 범위 파싱 실패: {date_str}")
         return None, None
-
-# 단일 날짜를 파싱하는 함수
-def parse_single_date(date_str):
-    formats = ["%Y-%m-%d", "%Y.%m.%d"]  # 가능한 날짜 형식
-    for fmt in formats:
-        try:
-            return datetime.strptime(date_str, fmt)
-        except ValueError:
-            continue
-    print(f"❌ Error: Could not parse date {date_str}")
-    return None  # 파싱 실패 시 None 반환
 
 ################################################################################
 #                       기존 aiohttp로 사용하는 fetch_url (공지사항 용)         #
@@ -723,13 +728,20 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
     await callback.answer()
     category_code = callback.data.split("_")[1]
     notices = await get_school_notices(category_code)
+    
     if not notices:
         await callback.message.edit_text("해당 카테고리의 공지사항이 없습니다.")
     else:
+        # 텍스트에 HTML 특수 문자를 이스케이프 처리
         text = "해당 카테고리 공지사항:\n"
         for notice in notices[:7]:
-            text += f"- {notice[0]} ({notice[3]})\n"
+            title = escape(notice[0])  # 공지 제목 이스케이프 처리
+            date = escape(notice[3])  # 날짜 이스케이프 처리
+            text += f"- {title} ({date})\n"
+
+        # 이스케이프 처리된 텍스트를 메시지로 전송
         await callback.message.edit_text(text)
+    
     await state.clear()
 
 ################################################################################
