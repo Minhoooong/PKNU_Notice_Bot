@@ -733,16 +733,27 @@ async def callback_category_selection(callback: CallbackQuery, state: FSMContext
     if not notices:
         await callback.message.edit_text("해당 카테고리의 공지사항이 없습니다.")
     else:
-        # 텍스트에 HTML 특수 문자를 이스케이프 처리
-        text = "해당 카테고리 공지사항:\n"
-        for notice in notices[:7]:
-            title = escape(notice[0])  # 공지 제목 이스케이프 처리
-            date = escape(notice[3])  # 날짜 이스케이프 처리
-            text += f"- {title} ({date})\n"
+        # 개별 공지사항 메시지를 그룹 채팅 형식으로 전송
+        for notice in notices[:7]:  # 최대 7개 공지사항
+            title = html.escape(notice[0])  # 제목 HTML 이스케이프
+            date = html.escape(notice[3])  # 날짜 HTML 이스케이프
+            department = html.escape(notice[2])  # 부서 정보 이스케이프
+            href = notice[1]  # 공지사항 링크
 
-        # 이스케이프 처리된 텍스트를 메시지로 전송
-        await callback.message.edit_text(text)
-    
+            message_text = (
+                f"<b>{title}</b>\n"
+                f"<i>{department}</i>\n"
+                "______________________________________________\n"
+                f"📅 <b>날짜:</b> {date}\n"
+                f"🔗 <a href='{href}'>자세히 보기</a>\n"
+            )
+
+            # 개별 공지사항 메시지를 전송
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="🔎 자세히 보기", url=href)]]
+            )
+            await callback.message.answer(message_text, reply_markup=keyboard, parse_mode="HTML")
+
     await state.clear()
 
 ################################################################################
@@ -890,20 +901,22 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
         return
     current_state = await state.get_state()
     if current_state != FilterState.waiting_for_date.state:
-        # 다른 일반 메시지 처리 로직이 있으면 여기서 처리
         return
 
     # 날짜 입력 로직
     input_text = message.text.strip()
-    current_year = datetime.now().year
-    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
-    filter_date = parse_date(full_date_str)
+    current_year = datetime.now().year  # 현재 년도를 가져옵니다.
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"  # MM/DD -> YYYY-MM-DD로 변환
+    filter_date = parse_single_date(full_date_str)  # 수정된 날짜 파싱 함수 사용
+    
     if filter_date is None:
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
         return
 
+    # 공지사항 필터링
     all_notices = await get_school_notices()
-    filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
+    filtered_notices = [n for n in all_notices if parse_single_date(n[3]) == filter_date]
+    
     if not filtered_notices:
         await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
     else:
