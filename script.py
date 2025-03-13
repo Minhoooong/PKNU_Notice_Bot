@@ -249,18 +249,18 @@ async def fetch_dynamic_html(url: str) -> str:
 ################################################################################
 # 단일 날짜를 파싱하는 함수 (MM/DD 형식 추가)
 def parse_single_date(date_str):
-    formats = ["%Y-%m-%d", "%Y.%m.%d", "%m/%d"]  # MM/DD 형식 추가
+    formats = ["%Y-%m-%d", "%Y.%m.%d", "%m/%d"]  # MM/DD 형식도 추가
     current_year = datetime.now().year
     for fmt in formats:
         try:
             if fmt == "%m/%d":
-                # MM/DD 형식은 현재 연도를 추가해서 처리
+                # MM/DD 형식이면 현재 년도를 자동 추가
                 date_str = f"{current_year}-{date_str}"
             return datetime.strptime(date_str, fmt)
         except ValueError:
             continue
     print(f"❌ Error: Could not parse date {date_str}")
-    return None  # 파싱 실패 시 None 반환
+    return None
 
 # 날짜 범위 (예: 2025.03.01 ~ 2025.03.31) 처리 함수 수정
 def parse_date_range(date_str):
@@ -934,6 +934,12 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
     all_notices = await get_school_notices()
     filtered_notices = [n for n in all_notices if parse_single_date(n[3]) == filter_date]
     
+    # 로그 추가: 공지사항이 필터링되는지 확인
+    if filtered_notices:
+        logging.info(f"선택된 날짜({filter_date.strftime('%Y-%m-%d')})에 해당하는 공지사항이 {len(filtered_notices)}개 있습니다.")
+    else:
+        logging.info(f"선택된 날짜({filter_date.strftime('%Y-%m-%d')})에 해당하는 공지사항이 없습니다.")
+
     if not filtered_notices:
         await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
     else:
