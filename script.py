@@ -249,6 +249,7 @@ async def fetch_dynamic_html(url: str) -> str:
 # 단일 날짜를 파싱하는 함수 (MM/DD 형식 추가)
 def parse_date(date_str: str):
     try:
+        logging.debug(f"입력된 날짜: {input_text} -> 파싱된 날짜: {filter_date}")
         if '.' in date_str:
             date_str = date_str.replace('.', '-')  # '.'을 '-'로 변경
             logging.debug(f"Parsing date: {date_str}")
@@ -888,6 +889,7 @@ async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
 @dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
 async def process_keyword_search(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
+    logging.debug(f"현재 상태: {current_state}")
     if current_state == "keyword_search":
         keyword = message.text.strip()
         await state.clear()
@@ -929,6 +931,7 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
         logging.error(f"날짜 파싱 실패: {input_text}")
 
     if filter_date is None:
+        logging.error(f"날짜 파싱 실패: {input_text}")
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
         return
 
@@ -950,6 +953,7 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
         logging.info(f"선택된 날짜({filter_date.strftime('%Y-%m-%d')})에 해당하는 공지사항이 없습니다.")
 
     if not filtered_notices:
+        logging.info(f"{input_text} 날짜에 해당하는 공지사항이 없습니다.")
         await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
     else:
         text = f"📢 {input_text}의 공지사항:\n"
