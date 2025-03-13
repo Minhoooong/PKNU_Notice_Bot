@@ -351,17 +351,21 @@ async def get_programs(user_filters: dict = None) -> list:
         return []
     soup = BeautifulSoup(html_content, 'html.parser')
     programs = []
-    # 'ul.list > li' 선택자로 프로그램 항목을 가져옵니다.
-    program_items = soup.select("ul.list > li")
+    # ul 태그의 클래스에 "list"라는 단어가 포함된 모든 ul 요소에서 li 자식 요소 선택
+    program_items = soup.select("ul[class*='list'] > li")
     if not program_items:
-        logging.debug("ul.list > li 선택자로 항목을 찾지 못했습니다.")
+        logging.debug("No 'ul[class*=\"list\"] > li' elements found. Trying alternative selectors...")
+        # 대체 선택: 클래스명이 'program-item'인 요소들
+        program_items = soup.select(".program-item")
+    if not program_items:
+        snippet = html_content[:500]
+        logging.debug(f"HTML snippet for filtered page: {snippet}")
     for item in program_items:
-        # 제목: <div class="subject"> 또는 <span class="tit">
-        title_elem = item.select_one("div.subject") or item.select_one("span.tit")
-        # 날짜: <span class="date">
-        date_elem = item.select_one("span.date")
-        # 링크: <a> 태그
-        link_elem = item.select_one("a[href]")
+        # 제목 요소: 'div.subject', 'span.tit', 'div.program-title' 중 하나
+        title_elem = item.find("div", class_="subject") or item.find("span", class_="tit") or item.find("div", class_="program-title")
+        # 날짜 요소: 'span.date' 또는 'span.program-date'
+        date_elem = item.find("span", class_="date") or item.find("span", class_="program-date")
+        link_elem = item.find("a", href=True)
         if title_elem and date_elem and link_elem:
             title = title_elem.get_text(strip=True)
             date_str = date_elem.get_text(strip=True)
