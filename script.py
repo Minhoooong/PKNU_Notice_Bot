@@ -902,6 +902,7 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
     await callback.answer()
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
+    await callback.answer()
 
 @dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
 async def process_date_input(message: types.Message, state: FSMContext) -> None:
