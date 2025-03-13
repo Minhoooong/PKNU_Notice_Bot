@@ -249,7 +249,6 @@ async def fetch_dynamic_html(url: str) -> str:
 # 단일 날짜를 파싱하는 함수 (MM/DD 형식 추가)
 def parse_date(date_str: str):
     try:
-        # 'YYYY.MM.DD' 형식으로 날짜를 변환
         if '.' in date_str:
             date_str = date_str.replace('.', '-')  # '.'을 '-'로 변경
         return datetime.strptime(date_str, "%Y-%m-%d")
@@ -343,6 +342,7 @@ async def get_school_notices(category: str = "") -> list:
                 date_ = date_td.get_text(strip=True)
                 notices.append((title, href, department, date_))
         notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
+        logging.debug(f"공지사항 제목: {notice[0]}, 날짜: {notice[3]}")
         return notices
     except Exception:
         logging.exception("❌ Error in get_school_notices")
@@ -705,6 +705,7 @@ async def notice_menu_handler(callback: CallbackQuery, state: FSMContext):
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
+    logging.debug("날짜 입력 요청됨")
     await state.set_state(FilterState.waiting_for_date)
 
 @dp.callback_query(lambda c: c.data == "all_notices")
@@ -906,7 +907,9 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
         await message.answer("접근 권한이 없습니다.")
         return
     current_state = await state.get_state()
+    logging.debug(f"현재 상태: {current_state}")
     if current_state != FilterState.waiting_for_date.state:
+        logging.debug("날짜 입력 상태가 아님. 작업을 종료합니다.")
         return
 
     # 날짜 입력 로직
