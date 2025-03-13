@@ -44,7 +44,7 @@ CATEGORY_CODES = {
 }
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.FileHandler("logfile.log"), logging.StreamHandler()]
 )
@@ -542,18 +542,28 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
 # --------------------- 기존 명령어 및 핸들러 ---------------------
 @dp.message(Command("register"))
 async def register_command(message: types.Message) -> None:
+    logging.debug(f"Register command invoked by {message.chat.id}: {message.text}")
     if not message.text:
         await message.answer("등록하려면 '/register [숫자 코드]'를 입력해 주세요.")
+        logging.debug("No text provided in registration command.")
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         await message.answer("등록하려면 '/register [숫자 코드]'를 입력해 주세요.")
+        logging.debug("Registration command missing code part.")
         return
     code = parts[1].strip()
     user_id_str = str(message.chat.id)
+    
+    if REGISTRATION_CODE is None:
+        logging.error("REGISTRATION_CODE 환경 변수가 설정되지 않았습니다.")
+        await message.answer("등록 시스템에 문제가 발생했습니다. 관리자에게 문의하세요.")
+        return
+
     if code == REGISTRATION_CODE:
         if user_id_str in ALLOWED_USERS:
             await message.answer("이미 등록되어 있습니다.")
+            logging.debug(f"User {user_id_str} attempted re-registration.")
         else:
             default_filters = {
                 "학생 학습역량 강화": False, "1학년": False, "2학년": False, "3학년": False, "4학년": False,
@@ -565,7 +575,8 @@ async def register_command(message: types.Message) -> None:
             await message.answer("등록 성공! 이제 개인 채팅 기능을 이용할 수 있습니다.")
             logging.info(f"새 화이트리스트 등록: {user_id_str}")
     else:
-        await message.answer("잘못된 코드입니다.")
+        await message.answer("잘못된 코드입니다. '/register [숫자 코드]' 형식으로 정확히 입력해 주세요.")
+        logging.debug(f"User {user_id_str} provided invalid registration code: {code}")
 
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message) -> None:
