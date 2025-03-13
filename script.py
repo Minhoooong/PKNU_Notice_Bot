@@ -355,32 +355,43 @@ async def get_programs(user_filters: dict = None) -> list:
         return []
     soup = BeautifulSoup(html_content, 'html.parser')
     programs = []
-    # ul 태그의 클래스에 "list"라는 단어가 포함된 모든 ul 요소에서 li 자식 요소 선택
-    program_items = soup.select("ul[class*='list'] > li")
+    # "ul.flex-wrap > li" 선택자로 프로그램 항목 선택
+    program_items = soup.select("ul.flex-wrap > li")
     if not program_items:
-        logging.debug("No 'ul[class*=\"list\"] > li' elements found. Trying alternative selectors...")
-        # 대체 선택: 클래스명이 'program-item'인 요소들
+        logging.debug("No 'ul.flex-wrap > li' elements found. Trying alternative selectors...")
         program_items = soup.select(".program-item")
     if not program_items:
         snippet = html_content[:500]
         logging.debug(f"HTML snippet for filtered page: {snippet}")
     for item in program_items:
-        # 제목 요소: 'div.subject', 'span.tit', 'div.program-title' 중 하나
-        title_elem = item.find("div", class_="subject") or item.find("span", class_="tit") or item.find("div", class_="program-title")
-        # 날짜 요소: 'span.date' 또는 'span.program-date'
-        date_elem = item.find("span", class_="date") or item.find("span", class_="program-date")
-        link_elem = item.find("a", href=True)
-        if title_elem and date_elem and link_elem:
-            title = title_elem.get_text(strip=True)
-            date_str = date_elem.get_text(strip=True)
-            href = link_elem.get("href")
-            if href and href.startswith("/"):
-                href = "https://whalebe.pknu.ac.kr" + href
-            programs.append({
-                "title": title,
-                "href": href,
-                "date": date_str
-            })
+        card_body = item.select_one("div.card-body")
+        if not card_body:
+            continue
+        # 제목 추출: h4.card-title 내부 텍스트
+        title_elem = card_body.select_one("h4.card-title")
+        title = title_elem.get_text(strip=True) if title_elem else "제목없음"
+        # 날짜 추출: 모집기간 정보 (첫 번째 col-12 내 두 번째 span)
+        date_str = ""
+        app_date_divs = card_body.select("div.row.app_date div.col-12")
+        if app_date_divs:
+            spans = app_date_divs[0].find_all("span")
+            if len(spans) >= 2:
+                date_str = spans[1].get_text(strip=True)
+        # 링크 추출: card_body의 onclick 속성에서 URL 추출
+        link = ""
+        onclick_attr = card_body.get("onclick")
+        if onclick_attr:
+            # 예: "location.href='/main/65?action=get&yy=2025&shtm=U0003001&...';"
+            parts = onclick_attr.split("'")
+            if len(parts) >= 2:
+                link = parts[1]
+                if link.startswith("/"):
+                    link = "https://whalebe.pknu.ac.kr" + link
+        programs.append({
+            "title": title,
+            "href": link,
+            "date": date_str
+        })
     programs.sort(key=lambda x: parse_date(x["date"]) or datetime.min, reverse=True)
     return programs
 
