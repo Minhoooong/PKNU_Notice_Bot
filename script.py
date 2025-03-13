@@ -585,6 +585,32 @@ async def register_command(message: types.Message) -> None:
         await message.answer("잘못된 코드입니다. '/register [숫자 코드]' 형식으로 정확히 입력해 주세요.")
         logging.debug(f"User {user_id_str} provided invalid registration code: {code}")
 
+@dp.message(lambda message: not message.text.startswith("/"))
+async def process_date_input(message: types.Message, state: FSMContext) -> None:
+    user_id_str = str(message.chat.id)
+    if user_id_str not in ALLOWED_USERS:
+        await message.answer("접근 권한이 없습니다.")
+        return
+    current_state = await state.get_state()
+    if current_state != FilterState.waiting_for_date.state:
+        return
+    input_text = message.text.strip()
+    current_year = datetime.now().year
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+    filter_date = parse_date(full_date_str)
+    if filter_date is None:
+        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
+        return
+    all_notices = await get_school_notices()
+    filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
+    if not filtered_notices:
+        await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
+    else:
+        await message.answer(f"📢 {input_text}의 공지사항을 불러옵니다.", reply_markup=ReplyKeyboardRemove())
+        for notice in filtered_notices:
+            await send_notification(notice, target_chat_id=message.chat.id)
+    await state.clear()
+
 @dp.message(Command("checknotices"))
 async def manual_check_notices(message: types.Message) -> None:
     user_id_str = str(message.chat.id)
