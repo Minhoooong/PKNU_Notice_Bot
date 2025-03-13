@@ -196,10 +196,14 @@ def parse_date(date_str: str):
         return None
 
 async def fetch_url(url: str) -> str:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    }
     try:
         logging.debug(f"요청 시작: {url}")
         timeout_duration = 30
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(url, timeout=timeout_duration) as response:
                 if response.status != 200:
                     logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
