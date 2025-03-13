@@ -198,12 +198,19 @@ def parse_date(date_str: str):
 
 async def fetch_url(url: str) -> str:
     try:
+        logging.debug(f"요청 시작: {url}")
+        timeout_duration = 30  # 타임아웃을 30초로 설정
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as response:
+            async with session.get(url, timeout=timeout_duration) as response:
                 if response.status != 200:
                     logging.error(f"❌ HTTP 요청 실패 ({response.status}): {url}")
                     return None
-                return await response.text()
+                text = await response.text()
+                logging.debug(f"요청 성공: {url} - 응답 길이: {len(text)}")
+                return text
+    except asyncio.TimeoutError:
+        logging.error(f"❌ 타임아웃 오류 발생 (타임아웃: {timeout_duration}초): {url}")
+        return None
     except Exception as e:
         logging.error(f"❌ URL 요청 오류: {url}, {e}", exc_info=True)
         return None
