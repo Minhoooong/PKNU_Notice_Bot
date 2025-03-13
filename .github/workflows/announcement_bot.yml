@@ -10,12 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/minhoooong/pknu_notice_bot:latest
-      env:
-        HOME: /root
       credentials:
         username: minhoooong
         password: ${{ secrets.MY_PAT }}
-
+      env:
+        PLAYWRIGHT_BROWSERS_PATH: /root/.cache/ms-playwright
+        
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
