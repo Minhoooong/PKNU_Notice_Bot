@@ -904,7 +904,7 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
     await state.set_state(FilterState.waiting_for_date)
 
 @dp.message()
- async def process_date_input(message: types.Message, state: FSMContext) -> None:
+async def process_date_input(message: types.Message, state: FSMContext) -> None:
     user_id_str = str(message.chat.id)
     if user_id_str not in ALLOWED_USERS:
         await message.answer("접근 권한이 없습니다.")
