@@ -312,9 +312,6 @@ async def fetch_url(url: str) -> str:
 #                       공지사항 파싱 함수                                      #
 ################################################################################
 async def get_school_notices(category: str = "") -> list:
-    """
-    부경대 공지사항 페이지(정적) 파싱: aiohttp + BeautifulSoup 사용
-    """
     try:
         category_url = f"{URL}?cd={category}" if category else URL
         html_content = await fetch_url(category_url)
@@ -341,8 +338,13 @@ async def get_school_notices(category: str = "") -> list:
                 department = user_td.get_text(strip=True)
                 date_ = date_td.get_text(strip=True)
                 notices.append((title, href, department, date_))
+        
+        # 공지사항 날짜 확인 (오류 발생 방지)
+        for notice in notices:
+            logging.debug(f"공지사항 제목: {notice[0]}, 날짜: {notice[3]}")
+
+        # 날짜를 기준으로 공지사항 정렬
         notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
-        logging.debug(f"공지사항 제목: {notice[0]}, 날짜: {notice[3]}")
         return notices
     except Exception:
         logging.exception("❌ Error in get_school_notices")
