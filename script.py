@@ -9,6 +9,7 @@ import logging
 import os
 import subprocess
 import sys
+import re
 import urllib.parse
 from datetime import datetime
 
