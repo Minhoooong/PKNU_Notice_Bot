@@ -12,6 +12,7 @@ import sys
 import re
 import urllib.parse
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 
 import aiohttp
 from html import escape
@@ -63,7 +64,7 @@ logging.basicConfig(
     handlers=[
         logging.FileHandler("logfile.log", encoding="utf-8"),
         logging.StreamHandler(),
-        logging.handlers.RotatingFileHandler("logfile.log", maxBytes=10**6, backupCount=3)
+        RotatingFileHandler("logfile.log", maxBytes=10**6, backupCount=3)  # Use the imported handler
     ]
 )
 
