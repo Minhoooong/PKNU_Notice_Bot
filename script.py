@@ -19,7 +19,7 @@ from aiogram.client.bot import DefaultBotProperties
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.dispatcher.filters import StateFilter
+from aiogram.fsm.filters import StateFilter
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
@@ -864,9 +864,6 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
 ################################################################################
 #                      날짜 필터 / 공지사항 표시 로직                           #
 ################################################################################
-class FilterState(StatesGroup):
-    waiting_for_date = State()
-
 # 날짜 입력을 받는 콜백 핸들러
 @dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
@@ -874,22 +871,16 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.set_state(FilterState.waiting_for_date)
 
-# 날짜 입력 처리 핸들러 (aiogram 3.x 방식으로 변경)
-@dp.message(filters.StateFilter(FilterState.waiting_for_date))
+@dp.message(StateFilter(FilterState.waiting_for_date))
 async def process_date_input(message: types.Message, state: FSMContext):
     date = message.text.strip()
-    
-    # 날짜 형식 검증
     if not re.match(r"^\d{2}/\d{2}$", date):
-        logging.error(f"날짜 파싱 실패: {date}")  # 로그에 실패한 날짜를 기록
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
         return
-    
-    # 날짜 필터링 코드 (예: 날짜를 기준으로 공지사항을 필터링)
+
+    # 날짜 처리
     await message.answer(f"입력하신 날짜: {date}")
-    
-    # 상태 변경
-    await state.finish()  # 완료 후 상태 종료
+    await state.finish()  # 상태를 종료합니다.
     
 @dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
 async def process_date_input(message: types.Message, state: FSMContext) -> None:
