@@ -1001,45 +1001,68 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
     logging.debug(f"✅ 상태 설정됨: {current_state}")  # 로그 추가
 
 @dp.message()
-async def process_date_input(message: types.Message, state: FSMContext) -> None:
+async def process_date_input(message: Message, state: FSMContext) -> None:
     logging.debug(f"📩 Received message from user: {message.text}")
     
-    # 현재 상태 확인
     current_state = await state.get_state()
     logging.debug(f"현재 상태: {current_state}")
 
     # 날짜 입력 상태인지 확인
     if current_state != FilterState.waiting_for_date.state:
-        logging.debug("날짜 입력 상태가 아님. 작업을 종료합니다.")
-        return  # 다른 핸들러로 넘어가지 않도록 중지
+        logging.debug("날짜 입력 상태가 아님. 무시합니다.")
+        return  # 날짜 입력 상태가 아닐 경우 핸들링 중단
 
     # 날짜 변환 로직
     input_text = message.text.strip()
-    current_year = datetime.now().year  
-    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"  
-    logging.debug(f"입력된 날짜: {input_text} -> 변환된 날짜: {full_date_str}")
+    logging.debug(f"입력된 원본 날짜: {input_text}")
 
-    filter_date = parse_date(full_date_str)  
+    # 🔹 1️⃣ /가 앞에 있는 경우 제거
+    if input_text.startswith("/"):
+        input_text = input_text[1:].strip()
+        logging.debug(f"🔹 '/' 제거 후: {input_text}")
 
-    if filter_date is None:
-        logging.error(f"날짜 파싱 실패: {input_text}")
-        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
+    # 🔹 2️⃣ 날짜 형식이 MM/DD 또는 MM.DD라면 YYYY-MM-DD로 변환
+    date_match = re.match(r"(\d{1,2})[./-](\d{1,2})", input_text)  # 정규식: 03/12, 03.12, 03-12
+    year_date_match = re.match(r"(\d{4})[./-](\d{1,2})[./-](\d{1,2})", input_text)  # 2025.03.12 같은 형식
+
+    if date_match:
+        month, day = date_match.groups()
+        current_year = datetime.now().year  # 현재 연도 추가
+        full_date_str = f"{current_year}-{month.zfill(2)}-{day.zfill(2)}"
+        logging.debug(f"✅ 변환된 날짜: {full_date_str}")
+    elif year_date_match:
+        year, month, day = year_date_match.groups()
+        full_date_str = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+        logging.debug(f"✅ 변환된 날짜: {full_date_str}")
+    else:
+        logging.error(f"❌ 날짜 형식이 올바르지 않습니다: {input_text}")
+        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 또는 YYYY.MM.DD 형식으로 다시 입력해 주세요.")
         return
 
-    # 공지사항 필터링
+    # 🔹 3️⃣ 날짜 파싱 시도
+    filter_date = parse_date(full_date_str)
+    if filter_date is None:
+        logging.error(f"❌ 날짜 파싱 실패: {full_date_str}")
+        await message.answer("날짜를 인식할 수 없습니다. 올바른 형식으로 입력해 주세요.")
+        return
+
+    logging.info(f"✅ 최종 파싱된 날짜: {filter_date.strftime('%Y-%m-%d')}")
+
+    # 🔹 4️⃣ 공지사항 필터링
     all_notices = await get_school_notices()
     filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
 
     if not filtered_notices:
-        await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
+        logging.info(f"📭 {full_date_str} 날짜에 해당하는 공지사항 없음")
+        await message.answer(f"📢 {full_date_str} 날짜에 해당하는 공지사항이 없습니다.")
     else:
-        text = f"📢 {input_text}의 공지사항:\n"
+        text = f"📢 {full_date_str}의 공지사항:\n"
         for notice in filtered_notices:
             text += f"- {notice[0]} ({notice[3]})\n"
         await message.answer(text, reply_markup=ReplyKeyboardRemove())
 
-    await state.clear()
-
+    await state.clear()  # ✅ 날짜 처리 후 상태 초기화
+    
 ################################################################################
 #                      'catch_all' 핸들러 (기타 메시지)                          #
 ################################################################################
