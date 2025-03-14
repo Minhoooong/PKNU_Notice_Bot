@@ -249,6 +249,10 @@ async def fetch_dynamic_html(url: str) -> str:
 # 단일 날짜를 파싱하는 함수 (MM/DD 형식 추가)
 def parse_date(date_str: str):
     try:
+        logging.debug(f"입력된 날짜: {date_str} -> 파싱된 날짜: {date_str}")
+        if '.' in date_str:
+            date_str = date_str.replace('.', '-')  # '.'을 '-'로 변경
+            logging.debug(f"Parsing date: {date_str}")
         return datetime.strptime(date_str, "%Y-%m-%d")
     except ValueError as ve:
         logging.error(f"Date parsing error for {date_str}: {ve}", exc_info=True)
@@ -310,9 +314,6 @@ async def fetch_url(url: str) -> str:
 #                       공지사항 파싱 함수                                      #
 ################################################################################
 async def get_school_notices(category: str = "") -> list:
-    """
-    부경대 공지사항 페이지(정적) 파싱: aiohttp + BeautifulSoup 사용
-    """
     try:
         category_url = f"{URL}?cd={category}" if category else URL
         html_content = await fetch_url(category_url)
@@ -339,6 +340,12 @@ async def get_school_notices(category: str = "") -> list:
                 department = user_td.get_text(strip=True)
                 date_ = date_td.get_text(strip=True)
                 notices.append((title, href, department, date_))
+        
+        # 공지사항 날짜 확인 (오류 발생 방지)
+        for notice in notices:
+            logging.debug(f"공지사항 제목: {notice[0]}, 날짜: {notice[3]}")
+
+        # 날짜를 기준으로 공지사항 정렬
         notices.sort(key=lambda x: parse_date(x[3]) or datetime.min, reverse=True)
         return notices
     except Exception:
@@ -702,6 +709,7 @@ async def notice_menu_handler(callback: CallbackQuery, state: FSMContext):
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
+    logging.debug("날짜 입력 요청됨")
     await state.set_state(FilterState.waiting_for_date)
 
 @dp.callback_query(lambda c: c.data == "all_notices")
@@ -881,20 +889,116 @@ async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
 @dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
 async def process_keyword_search(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
+    logging.debug(f"현재 상태: {current_state}")
+
+    # 날짜 입력 상태일 때는 이 핸들러 실행 방지
+    if current_state == FilterState.waiting_for_date.state:
+        logging.debug("현재 날짜 입력 상태이므로, 키워드 검색 핸들러를 실행하지 않음.")
+        return  
+
     if current_state == "keyword_search":
         keyword = message.text.strip()
         await state.clear()
         await message.answer(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
-        # 실제 키워드 검색 로직 추가 가능
 
 ################################################################################
 #                      날짜 필터 / 공지사항 표시 로직                           #
 ################################################################################
+async def debug_check_date_parsing():
+    """
+    Manually test date input parsing and notice fetching.
+    Run this function independently.
+    """
+    logging.info("🛠 Starting manual debug test for date processing...")
+
+    # Simulate user input (MM/DD format)
+    input_text = "03/11"  # Change this to test different cases
+    logging.debug(f"📩 Simulated user input: {input_text}")
+
+    # Convert MM/DD to YYYY-MM-DD
+    current_year = datetime.now().year
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+    logging.debug(f"🔄 Converted date: {full_date_str}")
+
+    # Test parse_date function
+    filter_date = parse_date(full_date_str)
+    if filter_date is None:
+        logging.error(f"❌ Date parsing failed for input: {input_text}")
+        return
+    
+    logging.info(f"✅ Parsed date: {filter_date.strftime('%Y-%m-%d')}")
+
+    # Fetch notices from the website
+    notices = await get_school_notices()
+    if not notices:
+        logging.error("❌ No notices retrieved. There may be an issue with fetching data.")
+        return
+
+    logging.info(f"📌 Retrieved {len(notices)} notices from school.")
+
+    # Print notices
+    for notice in notices:
+        logging.debug(f"공지사항 제목: {notice[0]}, 날짜: {notice[3]}")
+
+    # Filter notices by date
+    filtered_notices = [n for n in notices if parse_date(n[3]) == filter_date]
+    logging.info(f"🔎 Found {len(filtered_notices)} notices for {filter_date.strftime('%Y-%m-%d')}")
+
+    if not filtered_notices:
+        logging.info("📭 No matching notices found.")
+    else:
+        for notice in filtered_notices:
+            logging.info(f"📢 Notice: {notice[0]} ({notice[3]})")
+
+    logging.info("✅ Debug test completed.")
+    ㅌ
+@dp.message(Command("date_filter"))
+async def manual_date_filter(message: types.Message):
+    """
+    Manually trigger date filtering using /date_filter MM/DD
+    Example: /date_filter 03/11
+    """
+    parts = message.text.split(maxsplit=1)  # Split command and argument
+
+    if len(parts) < 2:
+        await message.answer("❌ Please provide a date in MM/DD format.\nExample: `/date_filter 03/11`", parse_mode="Markdown")
+        return
+
+    input_text = parts[1].strip()
+    logging.debug(f"📩 Manual date filter input: {input_text}")
+
+    # Convert MM/DD to YYYY-MM-DD
+    current_year = datetime.now().year
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+    filter_date = parse_date(full_date_str)
+
+    if filter_date is None:
+        logging.error(f"🚨 Date parsing failed for input: {input_text}")
+        await message.answer("❌ Invalid date format! Please use MM/DD format.\nExample: `/date_filter 03/11`")
+        return
+
+    # Fetch notices
+    all_notices = await get_school_notices()
+    filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
+
+    if not filtered_notices:
+        await message.answer(f"📢 No announcements found for {filter_date.strftime('%Y-%m-%d')}")
+    else:
+        response_text = f"📢 Announcements for {filter_date.strftime('%Y-%m-%d')}:\n"
+        for notice in filtered_notices:
+            response_text += f"- {notice[0]} ({notice[3]})\n"
+        
+        await message.answer(response_text)
+
+    logging.info(f"✅ Found {len(filtered_notices)} notices for {filter_date.strftime('%Y-%m-%d')}")
+
 @dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
-    await state.set_state(FilterState.waiting_for_date)
+    await state.update_data(state="waiting_for_date")
+    current_state = await state.get_state()
+    logging.debug(f"✅ 상태 설정됨: {current_state}")  # 로그 추가
 
 @dp.message()
 async def process_date_input(message: Message, state: FSMContext) -> None:
@@ -960,7 +1064,14 @@ async def process_date_input(message: Message, state: FSMContext) -> None:
 #                      'catch_all' 핸들러 (기타 메시지)                          #
 ################################################################################
 @dp.message()
-async def catch_all(message: types.Message):
+async def catch_all(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    
+    # 날짜 입력 상태일 때 catch_all 핸들러 실행 방지
+    if current_state == FilterState.waiting_for_date.state:
+        logging.debug("현재 날짜 입력 상태이므로 catch-all 핸들러를 실행하지 않음.")
+        return  
+
     logging.debug(f"Catch-all handler received message: {message.text}")
 
 ################################################################################
