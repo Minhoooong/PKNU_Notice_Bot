@@ -875,35 +875,155 @@ async def filter_done_program_handler(callback: CallbackQuery):
     selected = [opt for opt, chosen in user_filter.items() if chosen]
     await callback.message.edit_text(f"선택한 필터: {', '.join(selected) if selected else '없음'}")
 
-@dp.callback_query(lambda c: c.data == "keyword_search")
-async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
-    """키워드 검색을 시작하는 핸들러"""
-    await callback.answer()
-    await callback.message.edit_text("🔎 검색할 키워드를 입력해 주세요:")
-    await state.set_state(KeywordSearchState.waiting_for_keyword)  # 키워드 검색 상태 설정
+################################################################################
+#                      키워드 검색 URL 생성 함수                               #
+################################################################################
+def build_keyword_search_url(keyword: str) -> str:
+    """
+    입력된 키워드를 검색한 결과 페이지의 URL을 반환합니다.
+    """
+    base_url = "https://whalebe.pknu.ac.kr/main/65"
+    params = {
+        "pageIndex": 1,
+        "action": "",
+        "order": 0,
+        "filterOF": 0,
+        "all": 0,
+        "intr": 0,
+        "ridx": 0,
+        "newAppr": 0,
+        "rstOk": 0,
+        "recvYn": 0,
+        "aIridx": 0,
+        "clsf": "",
+        "type": "",
+        "diag": "",
+        "oneYy": 0,
+        "twoYy": 0,
+        "trdYy": 0,
+        "std1": 0,
+        "std2": 0,
+        "std3": 0,
+        "std4": 0,
+        "deptCd": "",
+        "searchKeyword": keyword  # 검색어 추가
+    }
+    return base_url + "?" + urllib.parse.urlencode(params)
 
+################################################################################
+#                      키워드 검색을 통한 프로그램 크롤링                       #
+################################################################################
+async def get_programs_by_keyword(keyword: str) -> list:
+    """
+    특정 키워드를 사용하여 비교과 프로그램을 검색하고, 필터링된 결과를 반환합니다.
+    """
+    url = build_keyword_search_url(keyword)
+    html_content = await fetch_dynamic_html(url)  # Playwright를 사용하여 동적 페이지 가져오기
+
+    if not html_content:
+        logging.error(f"❌ 키워드 검색 실패: {keyword}")
+        return []
+
+    soup = BeautifulSoup(html_content, 'html.parser')
+    programs = []
+
+    program_items = soup.select("ul.flex-wrap > li")
+    if not program_items:
+        logging.debug("🔍 검색된 프로그램이 없습니다.")
+        return []
+
+    for item in program_items:
+        card_body = item.select_one("div.card-body")
+        if not card_body:
+            continue
+
+        # 제목
+        title_elem = card_body.select_one("h4.card-title")
+        title = title_elem.get_text(strip=True) if title_elem else "제목 없음"
+
+        # 모집 마감 여부 확인
+        status_elem = card_body.select_one("span.label-danger")  # "모집종료" 등의 상태를 나타냄
+        if status_elem and "모집종료" in status_elem.get_text(strip=True):
+            continue  # 모집 종료된 프로그램은 제외
+
+        # 카테고리 및 학과 정보
+        sub_info_div = card_body.select_one("div.sub_info.mb-2")
+        if sub_info_div:
+            dept_elem = sub_info_div.select_one("div.col-7.px-0.text-truncate")
+            category_elem = dept_elem.find_next_sibling("div") if dept_elem else None
+            department = dept_elem.get_text(strip=True) if dept_elem else "부서 정보 없음"
+            category = category_elem.get_text(strip=True) if category_elem else "카테고리 없음"
+            categories = [department, category]
+        else:
+            categories = []
+
+        # 설명
+        description_elem = card_body.select_one("p.card-text")
+        description = description_elem.get_text(strip=True) if description_elem else "설명 없음"
+
+        # 모집 기간
+        recruitment_period = ""
+        app_date_divs = card_body.select("div.row.app_date div.col-12")
+        if app_date_divs:
+            spans = app_date_divs[0].find_all("span")
+            if len(spans) >= 2:
+                recruitment_period = spans[1].get_text(strip=True)
+
+        # 운영 기간
+        operation_period = ""
+        if len(app_date_divs) > 1:
+            spans = app_date_divs[1].find_all("span")
+            if len(spans) >= 2:
+                operation_period = spans[1].get_text(strip=True)
+
+        # 모집 인원 및 지원 인원
+        capacity_elem = card_body.select_one("span.total_member")
+        applicants_elem = card_body.select_one("span.volun")
+        capacity = re.search(r"\d+", capacity_elem.get_text(strip=True)).group() if capacity_elem else "정보 없음"
+        applicants = re.search(r"\d+", applicants_elem.get_text(strip=True)).group() if applicants_elem else "정보 없음"
+
+        # 프로그램 상세 페이지 링크
+        link = ""
+        onclick_attr = card_body.get("onclick")
+        if onclick_attr:
+            parts = onclick_attr.split("'")
+            if len(parts) >= 2:
+                link = "https://whalebe.pknu.ac.kr" + parts[1] if parts[1].startswith("/") else parts[1]
+
+        programs.append({
+            "title": title,
+            "categories": categories,
+            "description": description,
+            "recruitment_period": recruitment_period,
+            "operation_period": operation_period,
+            "capacity": capacity,
+            "applicants": applicants,
+            "href": link
+        })
+
+    programs.sort(key=lambda x: parse_date_range(x["recruitment_period"]) or datetime.min, reverse=True)
+    return programs
+
+################################################################################
+#                      키워드 검색 핸들러 수정                                 #
+################################################################################
 @dp.message(KeywordSearchState.waiting_for_keyword)
 async def process_keyword_search(message: types.Message, state: FSMContext):
-    """키워드 입력을 처리하는 핸들러"""
+    """키워드 입력을 처리하고, 검색된 프로그램을 가져와 전송"""
     keyword = message.text.strip()
-    await state.clear()  # 상태 초기화 (다른 기능에 영향 주지 않도록)
+    await state.clear()  # 상태 초기화
 
     await message.answer(f"🔍 '{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
 
-    # 프로그램 목록 가져오기
-    programs = await get_programs()
+    # 키워드 검색을 통한 프로그램 목록 가져오기
+    programs = await get_programs_by_keyword(keyword)
 
-    # 키워드 포함된 프로그램 필터링
-    matched_programs = [
-        p for p in programs if keyword.lower() in p["title"].lower()
-    ]
-
-    if not matched_programs:
+    if not programs:
         await message.answer(f"❌ '{keyword}' 키워드에 해당하는 프로그램이 없습니다.")
     else:
-        for program in matched_programs:
+        for program in programs:
             await send_program_notification(program, message.chat.id)  # 개별 메시지 전송
-
+            
 ################################################################################
 #                      날짜 필터 / 공지사항 표시 로직                           #
 ################################################################################
