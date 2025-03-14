@@ -411,7 +411,7 @@ def build_filter_url(user_filters: dict) -> str:
         "ridx": 0,
         "newAppr": 0,
         "rstOk": 0,
-        "recvYn": 0,
+        "recvYn": 1,
         "aIridx": 0,
         "clsf": "",
         "type": [],
@@ -851,6 +851,18 @@ def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
 
     rows.append([InlineKeyboardButton(text="선택 완료", callback_data="filter_done_program")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+    
+@dp.message(Command("filter"))
+async def filter_command(message: types.Message) -> None:
+    """사용자가 /filter 명령어를 입력하면 필터 선택 버튼을 표시"""
+    user_id_str = str(message.chat.id)
+    
+    if user_id_str not in ALLOWED_USERS:
+        await message.answer("❌ 등록된 사용자가 아닙니다. 먼저 /register 명령어를 사용하여 등록하세요.")
+        return
+    
+    keyboard = get_program_filter_keyboard(message.chat.id)
+    await message.answer("🎯 필터를 선택하세요:", reply_markup=keyboard)
 
 @dp.callback_query(lambda c: c.data.startswith("toggle_program_"))
 async def toggle_program_filter(callback: CallbackQuery):
@@ -903,7 +915,7 @@ def build_keyword_search_url(keyword: str) -> str:
         "ridx": 0,
         "newAppr": 0,
         "rstOk": 0,
-        "recvYn": 0,
+        "recvYn": 1,
         "aIridx": 0,
         "clsf": "",
         "type": "",
