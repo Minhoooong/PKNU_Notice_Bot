@@ -899,6 +899,54 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
 ################################################################################
 #                      날짜 필터 / 공지사항 표시 로직                           #
 ################################################################################
+async def debug_check_date_parsing():
+    """
+    Manually test date input parsing and notice fetching.
+    Run this function independently.
+    """
+    logging.info("🛠 Starting manual debug test for date processing...")
+
+    # Simulate user input (MM/DD format)
+    input_text = "03/11"  # Change this to test different cases
+    logging.debug(f"📩 Simulated user input: {input_text}")
+
+    # Convert MM/DD to YYYY-MM-DD
+    current_year = datetime.now().year
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+    logging.debug(f"🔄 Converted date: {full_date_str}")
+
+    # Test parse_date function
+    filter_date = parse_date(full_date_str)
+    if filter_date is None:
+        logging.error(f"❌ Date parsing failed for input: {input_text}")
+        return
+    
+    logging.info(f"✅ Parsed date: {filter_date.strftime('%Y-%m-%d')}")
+
+    # Fetch notices from the website
+    notices = await get_school_notices()
+    if not notices:
+        logging.error("❌ No notices retrieved. There may be an issue with fetching data.")
+        return
+
+    logging.info(f"📌 Retrieved {len(notices)} notices from school.")
+
+    # Print notices
+    for notice in notices:
+        logging.debug(f"공지사항 제목: {notice[0]}, 날짜: {notice[3]}")
+
+    # Filter notices by date
+    filtered_notices = [n for n in notices if parse_date(n[3]) == filter_date]
+    logging.info(f"🔎 Found {len(filtered_notices)} notices for {filter_date.strftime('%Y-%m-%d')}")
+
+    if not filtered_notices:
+        logging.info("📭 No matching notices found.")
+    else:
+        for notice in filtered_notices:
+            logging.info(f"📢 Notice: {notice[0]} ({notice[3]})")
+
+    logging.info("✅ Debug test completed.")
+
 @dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
@@ -1041,7 +1089,7 @@ if __name__ == '__main__':
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     try:
-        asyncio.run(run_bot())
+        asyncio.run(debug_check_date_parsing())
     except Exception as e:
         logging.error(f"❌ Bot terminated with error: {e}", exc_info=True)
         
