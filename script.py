@@ -878,6 +878,13 @@ async def filter_done_program_handler(callback: CallbackQuery):
 ################################################################################
 #                      키워드 검색 URL 생성 함수                               #
 ################################################################################
+@dp.callback_query(lambda c: c.data == "keyword_search")
+async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
+    """키워드 검색을 시작하는 핸들러"""
+    await callback.answer()
+    await callback.message.edit_text("🔎 검색할 키워드를 입력해 주세요:")
+    await state.set_state(KeywordSearchState.waiting_for_keyword)  # 상태 설정
+
 def build_keyword_search_url(keyword: str) -> str:
     """
     입력된 키워드를 검색한 결과 페이지의 URL을 반환합니다.
