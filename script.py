@@ -992,6 +992,8 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
     await callback.answer()
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
     await state.update_data(state="waiting_for_date")
+    current_state = await state.get_state()
+    logging.debug(f"✅ 상태 설정됨: {current_state}")  # 로그 추가
 
 @dp.message()
 async def process_date_input(message: types.Message, state: FSMContext) -> None:
