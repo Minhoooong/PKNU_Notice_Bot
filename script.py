@@ -81,6 +81,9 @@ class FilterState(StatesGroup):
     waiting_for_date = State()
     selecting_category = State()
 
+class KeywordSearchState(StatesGroup):
+    waiting_for_keyword = State()  # 키워드 입력 상태 추가
+
 ################################################################################
 #                       화이트리스트 관련 함수                                  #
 ################################################################################
@@ -874,47 +877,59 @@ async def filter_done_program_handler(callback: CallbackQuery):
 
 @dp.callback_query(lambda c: c.data == "keyword_search")
 async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
+    """키워드 검색을 시작하는 핸들러"""
     await callback.answer()
-    await callback.message.edit_text("검색할 키워드를 입력해 주세요:")
-    await state.set_state("keyword_search")
-'''
-@dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
+    await callback.message.edit_text("🔎 검색할 키워드를 입력해 주세요:")
+    await state.set_state(KeywordSearchState.waiting_for_keyword)  # 키워드 검색 상태 설정
+
+@dp.message(KeywordSearchState.waiting_for_keyword)
 async def process_keyword_search(message: types.Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state == "keyword_search":
-        keyword = message.text.strip()
-        await state.clear()
-        await message.answer(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
-        # 실제 키워드 검색 로직 추가 가능
-'''
+    """키워드 입력을 처리하는 핸들러"""
+    keyword = message.text.strip()
+    await state.clear()  # 상태 초기화 (다른 기능에 영향 주지 않도록)
+
+    await message.answer(f"🔍 '{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
+
+    # 프로그램 목록 가져오기
+    programs = await get_programs()
+
+    # 키워드 포함된 프로그램 필터링
+    matched_programs = [
+        p for p in programs if keyword.lower() in p["title"].lower()
+    ]
+
+    if not matched_programs:
+        await message.answer(f"❌ '{keyword}' 키워드에 해당하는 프로그램이 없습니다.")
+    else:
+        for program in matched_programs:
+            await send_program_notification(program, message.chat.id)  # 개별 메시지 전송
+
 ################################################################################
 #                      날짜 필터 / 공지사항 표시 로직                           #
 ################################################################################
 @dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
+    """날짜 필터링 시작"""
     await callback.answer()
-    await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
-    await state.set_state(FilterState.waiting_for_date)
+    await callback.message.edit_text("📅 MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
+    await state.set_state(FilterState.waiting_for_date)  # 날짜 입력 상태 설정
 
-@dp.message()
+@dp.message(FilterState.waiting_for_date)
 async def process_date_input(message: types.Message, state: FSMContext) -> None:
+    """날짜 입력을 처리하는 핸들러"""
     user_id_str = str(message.chat.id)
     if user_id_str not in ALLOWED_USERS:
-        await message.answer("접근 권한이 없습니다.")
-        return
-    
-    current_state = await state.get_state()
-    if current_state != FilterState.waiting_for_date.state:
+        await message.answer("❌ 접근 권한이 없습니다.")
         return
 
-    # 날짜 입력 로직
+    # 날짜 입력 처리
     input_text = message.text.strip()
-    current_year = datetime.now().year  # 현재 년도 가져오기
+    current_year = datetime.now().year  # 현재 연도
     full_date_str = f"{current_year}-{input_text.replace('/', '-')}"  # MM/DD -> YYYY-MM-DD 변환
-    filter_date = parse_date(full_date_str)  # 날짜 파싱
-    
+    filter_date = parse_date(full_date_str)
+
     if filter_date is None:
-        await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
+        await message.answer("⚠️ 날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
         return
 
     # 공지사항 필터링
@@ -946,20 +961,21 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
 
             # 인라인 버튼 추가
             keyboard = InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
+                inline_keyboard=[[InlineKeyboardButton(text="🔎 자세히 보기", url=href)]]
             )
 
             # 개별 메시지 전송
             await message.answer(message_text, reply_markup=keyboard, parse_mode="HTML")
 
-    await state.clear()
-
+    await state.clear()  # 상태 초기화
+    
 ################################################################################
 #                      'catch_all' 핸들러 (기타 메시지)                          #
 ################################################################################
 @dp.message()
 async def catch_all(message: types.Message):
-    logging.debug(f"Catch-all handler received message: {message.text}")
+    """기타 메시지를 받는 핸들러 (충돌 방지)"""
+    await message.answer("⚠️ 유효하지 않은 명령어입니다. 메뉴에서 선택해 주세요.")
 
 ################################################################################
 #                     새 공지사항 / 프로그램 자동 전송 (그룹채팅)               #
