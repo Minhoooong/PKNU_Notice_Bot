@@ -946,6 +946,46 @@ async def debug_check_date_parsing():
             logging.info(f"📢 Notice: {notice[0]} ({notice[3]})")
 
     logging.info("✅ Debug test completed.")
+    ㅌ
+@dp.message(Command("date_filter"))
+async def manual_date_filter(message: types.Message):
+    """
+    Manually trigger date filtering using /date_filter MM/DD
+    Example: /date_filter 03/11
+    """
+    parts = message.text.split(maxsplit=1)  # Split command and argument
+
+    if len(parts) < 2:
+        await message.answer("❌ Please provide a date in MM/DD format.\nExample: `/date_filter 03/11`", parse_mode="Markdown")
+        return
+
+    input_text = parts[1].strip()
+    logging.debug(f"📩 Manual date filter input: {input_text}")
+
+    # Convert MM/DD to YYYY-MM-DD
+    current_year = datetime.now().year
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"
+    filter_date = parse_date(full_date_str)
+
+    if filter_date is None:
+        logging.error(f"🚨 Date parsing failed for input: {input_text}")
+        await message.answer("❌ Invalid date format! Please use MM/DD format.\nExample: `/date_filter 03/11`")
+        return
+
+    # Fetch notices
+    all_notices = await get_school_notices()
+    filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
+
+    if not filtered_notices:
+        await message.answer(f"📢 No announcements found for {filter_date.strftime('%Y-%m-%d')}")
+    else:
+        response_text = f"📢 Announcements for {filter_date.strftime('%Y-%m-%d')}:\n"
+        for notice in filtered_notices:
+            response_text += f"- {notice[0]} ({notice[3]})\n"
+        
+        await message.answer(response_text)
+
+    logging.info(f"✅ Found {len(filtered_notices)} notices for {filter_date.strftime('%Y-%m-%d')}")
 
 @dp.callback_query(lambda c: c.data == "filter_date")
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
