@@ -951,10 +951,11 @@ async def debug_check_date_parsing():
 async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.edit_text("MM/DD 형식으로 날짜를 입력해 주세요. (예: 01/31)")
-    await state.set_state(FilterState.waiting_for_date)
+    await state.update_data(state="waiting_for_date")
 
 @dp.message()
 async def process_date_input(message: types.Message, state: FSMContext) -> None:
+    logging.debug(f"📩 Received message from user: {message.text}")
     user_id_str = str(message.chat.id)
     if user_id_str not in ALLOWED_USERS:
         await message.answer("접근 권한이 없습니다.")
@@ -1089,7 +1090,7 @@ if __name__ == '__main__':
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     try:
-        asyncio.run(debug_check_date_parsing())
+        asyncio.run_bot())
     except Exception as e:
         logging.error(f"❌ Bot terminated with error: {e}", exc_info=True)
         
