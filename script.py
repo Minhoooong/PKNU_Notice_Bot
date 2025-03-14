@@ -222,28 +222,40 @@ def is_new_program(title: str, href: str) -> bool:
 ################################################################################
 #                       동적 로딩 페이지 가져오는 함수 (Playwright)             #
 ################################################################################
-async def fetch_dynamic_html(url: str) -> str:
-    logging.debug(f"Playwright로 동적 페이지 요청 시작: {url}")
-    try:
-        timeout_duration = 60000  # 60초로 늘림
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
+e,
+                args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
+            )
             page = await browser.new_page()
-            await page.set_extra_http_headers({
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/114.0.0.0 Safari/537.36"
-                )
-            })
-            await page.goto(url, timeout=timeout_duration)
-            await page.wait_for_load_state("networkidle")
+
+            # 불필요한 리소스 차단
+            async def block_resources(route):
+                if route.request.resource_type in ["image", "stylesheet", "font"]:
+                    await route.abort()
+                else:
+                    await route.continue_()
+
+            await page.route("**/*", block_resources)
+
+            # 페이지 이동 및 로딩 최적화
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_load_state("domcontentloaded")
+
+            # 브라우저에서 직접 데이터 가져오기 (예시)
+            title_list = await page.evaluate("""
+                () => {
+                    let elements = document.querySelectorAll('h4.card-title');
+                    return Array.from(elements).map(el => el.innerText);
+                }
+            """)
+
             content = await page.content()
             await browser.close()
-            logging.debug(f"Playwright로 동적 페이지 요청 성공: {url} - 길이: {len(content)}")
+
+            logging.debug(f"✅ Playwright 로딩 성공: {url}, 가져온 제목 수: {len(title_list)}")
             return content
+
     except Exception as e:
-        logging.error(f"❌ Playwright dynamic fetch 오류: {url}, {e}", exc_info=True)
+        logging.error(f"❌ Playwright 크롤링 오류: {url}, {e}", exc_info=True)
         return ""
         
 ################################################################################
