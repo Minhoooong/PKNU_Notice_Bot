@@ -1090,7 +1090,7 @@ if __name__ == '__main__':
     if sys.platform.startswith("win"):
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     try:
-        asyncio.run_bot())
+        asyncio.run(run_bot())
     except Exception as e:
         logging.error(f"❌ Bot terminated with error: {e}", exc_info=True)
         
