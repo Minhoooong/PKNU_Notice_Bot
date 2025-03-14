@@ -890,11 +890,16 @@ async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
 async def process_keyword_search(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
     logging.debug(f"현재 상태: {current_state}")
+
+    # 날짜 입력 상태일 때는 이 핸들러 실행 방지
+    if current_state == FilterState.waiting_for_date.state:
+        logging.debug("현재 날짜 입력 상태이므로, 키워드 검색 핸들러를 실행하지 않음.")
+        return  
+
     if current_state == "keyword_search":
         keyword = message.text.strip()
         await state.clear()
         await message.answer(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
-        # 실제 키워드 검색 로직 추가 가능
 
 ################################################################################
 #                      날짜 필터 / 공지사항 표시 로직                           #
@@ -998,28 +1003,23 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
 @dp.message()
 async def process_date_input(message: types.Message, state: FSMContext) -> None:
     logging.debug(f"📩 Received message from user: {message.text}")
-    user_id_str = str(message.chat.id)
-    if user_id_str not in ALLOWED_USERS:
-        await message.answer("접근 권한이 없습니다.")
-        return
+    
+    # 현재 상태 확인
     current_state = await state.get_state()
     logging.debug(f"현재 상태: {current_state}")
+
+    # 날짜 입력 상태인지 확인
     if current_state != FilterState.waiting_for_date.state:
         logging.debug("날짜 입력 상태가 아님. 작업을 종료합니다.")
-        return
+        return  # 다른 핸들러로 넘어가지 않도록 중지
 
-    # 날짜 입력 로직
+    # 날짜 변환 로직
     input_text = message.text.strip()
-    current_year = datetime.now().year  # 현재 년도를 가져옵니다.
-    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"  # MM/DD -> YYYY-MM-DD로 변환
+    current_year = datetime.now().year  
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"  
     logging.debug(f"입력된 날짜: {input_text} -> 변환된 날짜: {full_date_str}")
-    filter_date = parse_date(full_date_str)  # 수정된 날짜 파싱 함수 사용
-    
-    # 로그 추가: 날짜 파싱이 성공적으로 이루어졌는지 확인
-    if filter_date:
-        logging.info(f"입력된 날짜: {input_text} -> 파싱된 날짜: {filter_date.strftime('%Y-%m-%d')}")
-    else:
-        logging.error(f"날짜 파싱 실패: {input_text}")
+
+    filter_date = parse_date(full_date_str)  
 
     if filter_date is None:
         logging.error(f"날짜 파싱 실패: {input_text}")
@@ -1028,23 +1028,9 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
 
     # 공지사항 필터링
     all_notices = await get_school_notices()
-    
-    # 로그: 공지사항 날짜 확인
-    for notice in all_notices:
-        notice_date = parse_date(notice[3])
-        logging.debug(f"공지사항 제목: {notice[0]}, 날짜: {notice_date.strftime('%Y-%m-%d') if notice_date else 'Invalid date'}")
-    
     filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
-    logging.debug(f"Filtered notices: {filtered_notices}")
-    
-    # 로그 추가: 공지사항이 필터링되는지 확인
-    if filtered_notices:
-        logging.info(f"선택된 날짜({filter_date.strftime('%Y-%m-%d')})에 해당하는 공지사항이 {len(filtered_notices)}개 있습니다.")
-    else:
-        logging.info(f"선택된 날짜({filter_date.strftime('%Y-%m-%d')})에 해당하는 공지사항이 없습니다.")
 
     if not filtered_notices:
-        logging.info(f"{input_text} 날짜에 해당하는 공지사항이 없습니다.")
         await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
     else:
         text = f"📢 {input_text}의 공지사항:\n"
@@ -1058,7 +1044,14 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
 #                      'catch_all' 핸들러 (기타 메시지)                          #
 ################################################################################
 @dp.message()
-async def catch_all(message: types.Message):
+async def catch_all(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    
+    # 날짜 입력 상태일 때 catch_all 핸들러 실행 방지
+    if current_state == FilterState.waiting_for_date.state:
+        logging.debug("현재 날짜 입력 상태이므로 catch-all 핸들러를 실행하지 않음.")
+        return  
+
     logging.debug(f"Catch-all handler received message: {message.text}")
 
 ################################################################################
