@@ -885,7 +885,7 @@ async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await callback.message.edit_text("검색할 키워드를 입력해 주세요:")
     await state.set_state("keyword_search")
-
+'''
 @dp.message(lambda message: bool(message.text) and not message.text.startswith("/"))
 async def process_keyword_search(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
@@ -900,7 +900,7 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
         keyword = message.text.strip()
         await state.clear()
         await message.answer(f"'{keyword}' 키워드에 해당하는 프로그램을 검색 중입니다...")
-
+'''
 ################################################################################
 #                      날짜 필터 / 공지사항 표시 로직                           #
 ################################################################################
@@ -1063,6 +1063,7 @@ async def process_date_input(message: Message, state: FSMContext) -> None:
 ################################################################################
 #                      'catch_all' 핸들러 (기타 메시지)                          #
 ################################################################################
+'''
 @dp.message()
 async def catch_all(message: types.Message, state: FSMContext):
     current_state = await state.get_state()
@@ -1073,7 +1074,7 @@ async def catch_all(message: types.Message, state: FSMContext):
         return  
 
     logging.debug(f"Catch-all handler received message: {message.text}")
-
+'''
 ################################################################################
 #                     새 공지사항 / 프로그램 자동 전송 (그룹채팅)               #
 ################################################################################
