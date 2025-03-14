@@ -902,49 +902,55 @@ async def process_date_input(message: types.Message, state: FSMContext) -> None:
     if user_id_str not in ALLOWED_USERS:
         await message.answer("접근 권한이 없습니다.")
         return
+    
     current_state = await state.get_state()
     if current_state != FilterState.waiting_for_date.state:
         return
 
     # 날짜 입력 로직
     input_text = message.text.strip()
-    current_year = datetime.now().year  # 현재 년도를 가져옵니다.
-    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"  # MM/DD -> YYYY-MM-DD로 변환
-    filter_date = parse_date(full_date_str)  # 수정된 날짜 파싱 함수 사용
+    current_year = datetime.now().year  # 현재 년도 가져오기
+    full_date_str = f"{current_year}-{input_text.replace('/', '-')}"  # MM/DD -> YYYY-MM-DD 변환
+    filter_date = parse_date(full_date_str)  # 날짜 파싱
     
-    # 로그 추가: 날짜 파싱이 성공적으로 이루어졌는지 확인
-    if filter_date:
-        logging.info(f"입력된 날짜: {input_text} -> 파싱된 날짜: {filter_date.strftime('%Y-%m-%d')}")
-    else:
-        logging.error(f"날짜 파싱 실패: {input_text}")
-
     if filter_date is None:
         await message.answer("날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
         return
 
     # 공지사항 필터링
     all_notices = await get_school_notices()
-    
-    # 로그: 공지사항 날짜 확인
-    for notice in all_notices:
-        notice_date = parse_date(notice[3])
-        logging.info(f"공지사항 제목: {notice[0]}, 날짜: {notice_date.strftime('%Y-%m-%d')}")
-    
     filtered_notices = [n for n in all_notices if parse_date(n[3]) == filter_date]
-    
-    # 로그 추가: 공지사항이 필터링되는지 확인
-    if filtered_notices:
-        logging.info(f"선택된 날짜({filter_date.strftime('%Y-%m-%d')})에 해당하는 공지사항이 {len(filtered_notices)}개 있습니다.")
-    else:
-        logging.info(f"선택된 날짜({filter_date.strftime('%Y-%m-%d')})에 해당하는 공지사항이 없습니다.")
 
     if not filtered_notices:
         await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
     else:
-        text = f"📢 {input_text}의 공지사항:\n"
         for notice in filtered_notices:
-            text += f"- {notice[0]} ({notice[3]})\n"
-        await message.answer(text, reply_markup=ReplyKeyboardRemove())
+            title, href, department, date_ = notice
+
+            # 공지사항 본문 요약 및 이미지 추출
+            summary_text, image_urls = await extract_content(href)
+            safe_summary = summary_text or ""
+
+            # 메시지 텍스트 구성
+            message_text = (
+                f"[부경대 <b>{html.escape(department)}</b> 공지사항 업데이트]\n\n"
+                f"<b>{html.escape(title)}</b>\n\n"
+                f"{html.escape(date_)}\n\n"
+                "______________________________________________\n"
+                f"{safe_summary}\n\n"
+            )
+
+            # 이미지가 있으면 추가
+            if image_urls:
+                message_text += "\n".join(image_urls) + "\n\n"
+
+            # 인라인 버튼 추가
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
+            )
+
+            # 개별 메시지 전송
+            await message.answer(message_text, reply_markup=keyboard, parse_mode="HTML")
 
     await state.clear()
 
