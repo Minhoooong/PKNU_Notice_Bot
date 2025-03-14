@@ -222,7 +222,15 @@ def is_new_program(title: str, href: str) -> bool:
 ################################################################################
 #                       동적 로딩 페이지 가져오는 함수 (Playwright)             #
 ################################################################################
-e,
+
+async def fetch_dynamic_html(url: str) -> str:
+    """Playwright를 사용하여 최적화된 웹 페이지 크롤링"""
+    logging.debug(f"🚀 Playwright로 페이지 로딩 시작: {url}")
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
                 args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
             )
             page = await browser.new_page()
