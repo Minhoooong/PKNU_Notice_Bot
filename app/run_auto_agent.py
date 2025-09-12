@@ -5,7 +5,8 @@ from pathlib import Path
 from urllib.parse import urlparse, urljoin
 from playwright.async_api import async_playwright
 from app.core.config import selectors
-
+from app.adapters.pknu_ai_2025 import PKNUAI2025
+from app.utils_urlfilter import is_blocked_url
 
 def _must_redirect(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
