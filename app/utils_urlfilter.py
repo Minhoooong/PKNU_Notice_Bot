@@ -2,7 +2,7 @@ from urllib.parse import urlparse
 
 # Domains to block including subdomains
 BLOCKED_DOMAINS = {
-    "whalebe.pknu.ac.kr",
+    "whalebu.pknu.ac.kr",
     "whalebe.com",
     "www.whalebe.com",
 }
