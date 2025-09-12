@@ -8,9 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Force pull latest image
-        run: docker pull ghcr.io/minhoooong/pknu_notice_bot:latest
     container:
       image: ghcr.io/minhoooong/pknu_notice_bot:latest
       credentials:
@@ -20,6 +17,10 @@ jobs:
         PLAYWRIGHT_BROWSERS_PATH: /root/.cache/ms-playwright
         
     steps:
+      # 이 단계는 컨테이너 시작 후 가장 먼저 실행되어 최신 이미지를 보장합니다.
+      - name: Self-update container image
+        run: docker pull ghcr.io/minhoooong/pknu_notice_bot:latest
+
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
