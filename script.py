@@ -26,7 +26,7 @@ from app.run_announcement_agent import \
 from app.run_auto_agent import get_programs
 
 # --- 환경 변수 및 상수 설정 ---
-TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 GROUP_CHAT_ID = os.environ.get('GROUP_CHAT_ID') # 자동 알림용 그룹 ID
 REGISTRATION_CODE = os.environ.get('REGISTRATION_CODE')
