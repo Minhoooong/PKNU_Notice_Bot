@@ -3,3 +3,7 @@ aiogram
 beautifulsoup4
 openai
 playwright
+httpx
+PyYAML
+sqlmodel
+python-dotenv
