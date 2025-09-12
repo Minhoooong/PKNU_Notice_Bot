@@ -1,9 +1,13 @@
+
+
 import asyncio, os, json, hashlib
 from pathlib import Path
 from urllib.parse import urljoin
 from playwright.async_api import async_playwright
 from app.core.config import selectors
 from app.adapters.pknu_ai_2025 import PKNUAI2025
+from app.utils_urlfilter import is_blocked_url
+
 
 SAVE_JSON = Path("nonSbjt_all.json")
 SEEN_DB   = Path("pknu_nonSbjt_seen.txt")
@@ -65,6 +69,8 @@ async def main():
             seen = set(SEEN_DB.read_text(encoding="utf-8").splitlines())
         new_rows = []
         for r in rows:
+                    if is_blocked_url(r.get("url", "")):
+                continue
             rid = r.get("id") or uid(r["url"])
             r["id"] = rid
             if rid not in seen:
