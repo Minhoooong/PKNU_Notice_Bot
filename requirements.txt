@@ -4,3 +4,4 @@ beautifulsoup4
 PyYAML
 python-dotenv
 sqlmodel
+pydantic-settings
