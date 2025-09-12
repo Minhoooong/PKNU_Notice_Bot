@@ -1,6 +1,6 @@
 
 
-iimport asyncio, os, json, hashlib
+import asyncio, os, json, hashlib
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
 from playwright.async_api import async_playwright
