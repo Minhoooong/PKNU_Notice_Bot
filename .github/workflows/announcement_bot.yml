@@ -6,52 +6,46 @@ on:
     types: [rerun_announcement]
 
 jobs:
-  build:
+  run-bot:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/minhoooong/pknu_notice_bot:latest
-      credentials:
-        username: minhoooong
-        password: ${{ secrets.MY_PAT }}
-      env:
-        PLAYWRIGHT_BROWSERS_PATH: /root/.cache/ms-playwright
-        
     steps:
-      # 이 단계는 컨테이너 시작 후 가장 먼저 실행되어 최신 이미지를 보장합니다.
-      - name: Self-update container image
-        run: docker pull ghcr.io/minhoooong/pknu_notice_bot:latest
-
       - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
         with:
-          persist-credentials: true
-          fetch-depth: 0
-      
-      - name: Set safe directory explicitly
-        run: git config --global --add safe.directory "$(pwd)"
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.MY_PAT }}
 
-      - name: List workspace
-        run: |
-          echo "Current working directory: $(pwd)"
-          ls -la "$(pwd)"
+      - name: Pull the latest docker image
+        run: docker pull ghcr.io/minhoooong/pknu_notice_bot:latest
 
-      - name: Unlock git-crypt
+      - name: Unlock git-crypt and Run Script inside the container
         env:
           GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
-        run: |
-          export GIT_CRYPT_ALLOW_UNSAFE_REPOSITORY=1
-          echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
-          git-crypt unlock keyfile
-
-      - name: Run announcement bot script
-        env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           GROUP_CHAT_ID: ${{ secrets.GROUP_CHAT_ID }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MY_PAT: ${{ secrets.MY_PAT }}
           REGISTRATION_CODE: ${{ secrets.REGISTRATION_CODE }}
-        run: python3 script.py
+        run: |
+          # 1. Docker 컨테이너를 실행하고, 환경변수와 작업 볼륨을 넘겨줍니다.
+          # 2. 컨테이너 안에서 git-crypt를 풀고 파이썬 스크립트를 실행합니다.
+          docker run --rm \
+            --env GIT_CRYPT_KEY \
+            --env TELEGRAM_TOKEN \
+            --env CHAT_ID \
+            --env GROUP_CHAT_ID \
+            --env OPENAI_API_KEY \
+            --env MY_PAT \
+            --env REGISTRATION_CODE \
+            --workdir /__w/PKNU_Notice_Bot/PKNU_Notice_Bot \
+            --volume "${{ github.workspace }}":/__w/PKNU_Notice_Bot/PKNU_Notice_Bot \
+            ghcr.io/minhoooong/pknu_notice_bot:latest \
+            /bin/bash -c "export GIT_CRYPT_ALLOW_UNSAFE_REPOSITORY=1 && echo '$GIT_CRYPT_KEY' | base64 -d > keyfile && git-crypt unlock keyfile && python3 script.py"
 
       - name: Trigger workflow re-run
         if: success()
