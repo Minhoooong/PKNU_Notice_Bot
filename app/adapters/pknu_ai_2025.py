@@ -4,6 +4,24 @@ from bs4 import BeautifulSoup
 import hashlib
 
 class PKNUAI2025(SiteAdapter):
+    
+    async def login(self, username: str, password: str):
+        """포털 SSO 자동 로그인"""
+        target = urljoin(self.sel.get("site", "base_url"), self.sel.get("site", "target_url"))
+        await self.page.goto(target, wait_until="domcontentloaded")
+        
+        try:
+            id_input = await self.page.query_selector("input[type='text'], input#id")
+            pw_input = await self.page.query_selector("input[type='password'], input#pw")
+            
+            if id_input and pw_input and username and password:
+                await id_input.fill(username)
+                await pw_input.fill(password)
+                await pw_input.press("Enter")
+                await self.page.wait_for_timeout(5000)
+        except Exception as e:
+            print(f"로그인 폼 처리 중 오류 또는 폼 없음: {e}")
+            
     async def _build_detail_url(self, a_handle):
         sel = self.sel
         base = sel.get("site", "base_url")
@@ -81,7 +99,20 @@ class PKNUAI2025(SiteAdapter):
         rows = await self._parse_current_list(self.page)
         for r in rows:
             yield r
-
+    
+    async def search_programs(self, keyword: str):
+        """키워드로 프로그램을 검색하고 결과를 반환"""
+        await self._goto_list()
+        
+        search_input_sel = self.sel.get("search", "input", "input#searchCon")
+        search_button_sel = self.sel.get("search", "submit_button", "a.btn_search")
+        
+        await self.page.fill(search_input_sel, keyword)
+        await self.page.click(search_button_sel)
+        await self.page.wait_for_timeout(2000)
+        
+        return await self._parse_current_list(self.page)
+        
     async def iter_all_terms(self):
         """
 yy × shtm 전 조합 수집(페이지네이션 없음)"""
