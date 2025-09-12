@@ -66,12 +66,12 @@ async def auto_login(page):
     return
 
 async def main():
-    async with async_playwright() as pw:
+    asyc with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         page = await browser.new_page()
-                await _install_guards(page, selectors)
-        await auto_login(page)
-        adapter = PKNUAI2025(page, selectors)
+                     await _install_guards(page, selectors)
+              await auto_login(page)
+      adapter = PKNUAI2025(page, selectors)
         all_terms = os.getenv("ALL_TERMS","true").lower() in ("1","true","yes")
         rows = []
         if all_terms:
