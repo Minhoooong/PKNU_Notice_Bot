@@ -1,10 +1,24 @@
 
 
-import asyncio, os, json, hashlib
+iimport asyncio, os, json, hashlib
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urlparse, urljoin
 from playwright.async_api import async_playwright
 from app.core.config import selectors
+
+
+def _must_redirect(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host.endswith("whalebe.pknu.ac.kr")
+
+async def _install_guards(page, selectors):
+    base = selectors.get("site","base_url")
+    target = urljoin(base, selectors.get("site","target_url"))
+    # block network requests to blocked domains
+    await page.route("**/*", lambda route: route.abort() if is_blocked_url(route.request.url) else route.continue_())
+    # redirect on navigation if hitting blocked domain
+    page.on("framenavigated", lambda frame: (frame.goto(target) if _must_redirect(frame.url) else None))
+
 from app.adapters.pknu_ai_2025 import PKNUAI2025
 from app.utils_urlfilter import is_blocked_url
 
@@ -54,6 +68,7 @@ async def main():
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         page = await browser.new_page()
+                await _install_guards(page, selectors)
         await auto_login(page)
         adapter = PKNUAI2025(page, selectors)
         all_terms = os.getenv("ALL_TERMS","true").lower() in ("1","true","yes")
