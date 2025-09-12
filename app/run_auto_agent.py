@@ -1,5 +1,3 @@
-
-
 import asyncio, os, json, hashlib
 from pathlib import Path
 from urllib.parse import urlparse, urljoin
@@ -20,9 +18,6 @@ async def _install_guards(page, selectors):
     # redirect on navigation if hitting blocked domain
     page.on("framenavigated", lambda frame: (frame.goto(target) if _must_redirect(frame.url) else None))
 
-from app.adapters.pknu_ai_2025 import PKNUAI2025
-from app.utils_urlfilter import is_blocked_url
-
 
 SAVE_JSON = Path("nonSbjt_all.json")
 SEEN_DB   = Path("pknu_nonSbjt_seen.txt")
@@ -37,7 +32,7 @@ async def tg_send(text: str):
         return
     import httpx
     async with httpx.AsyncClient(timeout=10) as client:
-        api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        api = f"https.api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         await client.post(api, data={"chat_id": TELEGRAM_CHAT_ID, "text": text, "disable_web_page_preview": True})
 
 def uid(url: str) -> str:
@@ -66,12 +61,12 @@ async def auto_login(page):
     return
 
 async def main():
-    asyc with async_playwright() as pw:
+    async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True)
         page = await browser.new_page()
-                     await _install_guards(page, selectors)
-              await auto_login(page)
-      adapter = PKNUAI2025(page, selectors)
+        await _install_guards(page, selectors)
+        await auto_login(page)
+        adapter = PKNUAI2025(page, selectors)
         all_terms = os.getenv("ALL_TERMS","true").lower() in ("1","true","yes")
         rows = []
         if all_terms:
@@ -85,7 +80,7 @@ async def main():
             seen = set(SEEN_DB.read_text(encoding="utf-8").splitlines())
         new_rows = []
         for r in rows:
-                    if is_blocked_url(r.get("url", "")):
+            if is_blocked_url(r.get("url", "")):
                 continue
             rid = r.get("id") or uid(r["url"])
             r["id"] = rid
