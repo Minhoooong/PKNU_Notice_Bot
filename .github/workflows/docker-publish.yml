@@ -1,0 +1,35 @@
+name: Docker Image CI
+
+on:
+  push:
+    branches: [ "main", "restore/eac357" ] # main 또는 restore/eac357 브랜치에 코드가 push될 때 실행
+    paths:
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'app/**'
+  workflow_dispatch: # 수동으로 실행할 수도 있게 함
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # ghcr.io에 이미지를 푸시하기 위한 권한
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }} # GitHub 아이디
+          password: ${{ secrets.MY_PAT }} # 이전에 발급받은 PAT 시크릿
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/minhoooong/pknu_notice_bot:latest
