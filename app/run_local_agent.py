@@ -4,6 +4,8 @@ from urllib.parse import urljoin
 from playwright.async_api import async_playwright
 from app.core.config import selectors
 from app.adapters.pknu_ai_2025 import PKNUAI2025
+from app.utils_urlfilter import is_blocked_url
+
 
 SAVE_JSON = Path("nonSbjt_all.json")
 SEEN_DB   = Path("pknu_nonSbjt_seen.txt")
@@ -48,11 +50,15 @@ async def main():
         new_rows = []
         for r in rows:
             rid = r.get("id") or uid(r["url"])
+                if is_blocked_url(r.get("url", "")):
+        continue
             r["id"] = rid
             if rid not in seen:
                 new_rows.append(r)
                 seen.add(rid)
 
+            
+        
         SAVE_JSON.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
         SEEN_DB.write_text("\n".join(sorted(seen)), encoding="utf-8")
         print(f"[+] 총 {len(rows)}개, 신기 {len(new_rows)}개")
