@@ -1,9 +1,6 @@
-aiohttp
-aiogram
-beautifulsoup4
-openai
 playwright
 httpx
+beautifulsoup4
 PyYAML
-sqlmodel
 python-dotenv
+sqlmodel
