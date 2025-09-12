@@ -50,9 +50,10 @@ async def main():
         new_rows = []
         for r in rows:
             rid = r.get("id") or uid(r["url"])
-                if is_blocked_url(r.get("url", "")):
-        continue
-            r["id"] = rid
+                   if is_blocked_url(r.get("url", "")):
+                           continue
+
+               r["id"] = rid
             if rid not in seen:
                 new_rows.append(r)
                 seen.add(rid)
