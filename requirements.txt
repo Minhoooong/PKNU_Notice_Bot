@@ -1,9 +1,7 @@
-aiohttp
-aiogram
-beautifulsoup4
-openai
+# requirements.txt (수정)
 playwright
+beautifulsoup4
+pyyaml
+aiogram
 httpx
-PyYAML
-sqlmodel
-python-dotenv
+pydantic-settings  # pydantic.BaseSettings를 대체
