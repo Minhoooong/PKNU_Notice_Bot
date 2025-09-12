@@ -1,0 +1,38 @@
+name: Docker Image CI
+
+# 언제 실행할지 결정하는 부분입니다.
+on:
+  # 1. restore/eac357 브랜치에 코드를 push할 때 자동으로 실행됩니다.
+  push:
+    branches: [ "restore/eac357" ]
+  
+  # 2. GitHub Actions 탭에서 수동으로도 실행할 수 있습니다.
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # ghcr.io에 이미지를 올릴 수 있는 권한 부여
+
+    steps:
+      # 1. 소스코드를 내려받습니다.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. ghcr.io (이미지 창고)에 로그인합니다.
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.MY_PAT }} # GitHub 시크릿에 저장된 토큰 사용
+
+      # 3. 이미지를 빌드하고, ghcr.io에 업로드(푸시)합니다.
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: . # 현재 폴더의 Dockerfile을 사용
+          push: true # 빌드 후 푸시 실행!
+          tags: ghcr.io/minhoooong/pknu_notice_bot:latest # 이미지 이름 지정

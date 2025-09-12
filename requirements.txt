@@ -1,5 +1,8 @@
-aiohttp
-aiogram
-beautifulsoup4
-openai
 playwright
+httpx
+beautifulsoup4
+PyYAML
+python-dotenv
+sqlmodel
+pydantic-settings
+aiohttp
