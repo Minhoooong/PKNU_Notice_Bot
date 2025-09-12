@@ -1,4 +1,5 @@
-FROM mcr.microsoft.com/playwright/python:v1.47.0-jammy
+# Playwright 버전을 최신(v1.55.0)으로 변경합니다.
+FROM mcr.microsoft.com/playwright/python:v1.55.0-jammy
 
 # 시스템 프로그램(git-crypt)과 한글 폰트를 설치합니다.
 RUN apt-get update && apt-get install -y --no-install-recommends \
