@@ -6,3 +6,6 @@ python-dotenv
 sqlmodel
 pydantic-settings
 aiohttp
+aiogram
+openai
+python-dotenv
