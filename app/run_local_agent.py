@@ -18,7 +18,7 @@ async def tg_send(text: str):
         return
     import httpx
     async with httpx.AsyncClient(timeout=10) as client:
-        api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        api = f"https.api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         await client.post(api, data={"chat_id": TELEGRAM_CHAT_ID, "text": text, "disable_web_page_preview": True})
 
 def uid(url: str) -> str:
@@ -29,7 +29,7 @@ async def main():
         browser = await pw.chromium.launch(headless=False)
         page = await browser.new_page()
         await page.goto(urljoin(selectors.get("site","base_url"), selectors.get("site","target_url")))
-        print("\n[!] 안드나\u00a0'비도문 프록러미 목록'이 보이면 이 창으로 돌아와 Enter")
+        print("\n[!] '비교과 프로그램 목록'이 보이면 이 창으로 돌아와 Enter")
         input("[!] Enter → 전체 수집 시작... ")
 
         adapter = PKNUAI2025(page, selectors)
@@ -50,27 +50,25 @@ async def main():
         new_rows = []
         for r in rows:
             rid = r.get("id") or uid(r["url"])
-                   if is_blocked_url(r.get("url", "")):
-                           continue
+            if is_blocked_url(r.get("url", "")):
+                continue
 
-               r["id"] = rid
+            r["id"] = rid
             if rid not in seen:
                 new_rows.append(r)
                 seen.add(rid)
 
-            
-        
         SAVE_JSON.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
         SEEN_DB.write_text("\n".join(sorted(seen)), encoding="utf-8")
-        print(f"[+] 총 {len(rows)}개, 신기 {len(new_rows)}개")
+        print(f"[+] 총 {len(rows)}개, 신규 {len(new_rows)}개")
 
         for r in new_rows:
             msg = (
-                f"[\ube44\uace0\uacfc] {r.get('title','')}\n"
-                f"\uc0c1\ud0dc: {r.get('status','')}\n"
-                f"\uae30\uac04: {r.get('period','')}\n"
+                f"[비교과] {r.get('title','')}\n"
+                f"상태: {r.get('status','')}\n"
+                f"기간: {r.get('period','')}\n"
                 f"YY/SHTM: {r.get('yy','?')}/{r.get('shtm','?')}\n"
-                f"\ud83d\udd17 {r['url']}"
+                f"🔗 {r['url']}"
             )
             try:
                 await tg_send(msg)
