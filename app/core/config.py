@@ -1,19 +1,17 @@
-from pydantic import BaseSettings
+# app/core/config.py (수정)
+from pydantic_settings import BaseSettings
 from pathlib import Path
 import yaml
 
-
 class Settings(BaseSettings):
-    TELEGRAM_BOT_TOKEN: str | None = None
-    TELEGRAM_CHAT_ID: str | None = None
-    PKNU_USERNAME: str | None = None
-    PKNU_PASSWORD: str | None = None
-
-    BASE_DIR: Path = Path(__file__).resolve().parents[2]
-    SELECTOR_FILE: str = str(BASE_DIR / "selectors.pknuai.yaml")
-    POLL_INTERVAL_SEC: int = 300
+    PKNU_USERNAME: str
+    PKNU_PASSWORD: str
+    TELEGRAM_BOT_TOKEN: str
+    TELEGRAM_CHAT_ID: str
     HEADLESS: bool = True
 
+    class Config:
+        env_file = ".env" # 프로젝트 루트의 .env 파일을 사용
 
 class Selectors:
     def __init__(self, path: str):
