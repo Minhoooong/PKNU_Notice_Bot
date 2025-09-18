@@ -385,7 +385,7 @@ async def check_for_new_notices(target_chat_id: str):
 async def check_for_new_pknuai_programs(target_chat_id: str):
     logging.info("새로운 AI 비교과 프로그램을 확인합니다...")
     seen = load_program_cache()
-    current = await get_programs()
+    current = await get_pknuai_programs()
     found = False
     for program in current:
         # AI 비교과는 고유 ID 조합으로 키 생성
