@@ -201,7 +201,8 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
 
             if keyword:
                 logging.info(f"키워드 '{keyword}'로 검색합니다.")
-                await page.fill("#searchKeyword", keyword)
+                # ▼▼▼ '#searchKeyword'를 실제 사이트의 검색창 id로 변경해야 합니다. ▼▼▼
+                await page.fill("#searchKeyword", keyword) 
                 await page.press("#searchKeyword", "Enter")
                 await page.wait_for_load_state("networkidle", timeout=15000)
 
@@ -295,25 +296,34 @@ async def extract_content(url: str) -> tuple:
 
 # ▼ 추가: PKNU AI 비교과 파싱 함수
 def _parse_pknuai_page(soup: BeautifulSoup) -> list:
-    """PKNU AI 시스템의 HTML을 파싱하여 프로그램 목록 반환"""
+    """PKNU AI 시스템의 HTML을 파싱하여 프로그램 목록 반환 (수정된 버전)"""
     programs = []
-    items = soup.select("ul.row.flex-wrap.viewType > li")
+    # 1. 각 프로그램 카드를 감싸는 li 태그를 선택합니다.
+    items = soup.select("li.col-xl-3.col-lg-4.col-md-6")
+    
     for li in items:
-        title = (li.select_one("a[href='#']").get_text(strip=True) or "제목 없음")
-        status = (li.select_one(".pin_area .pin_on2").get_text(strip=True) or "상태 미확인")
-        
-        # 상세 URL 구성에 필요한 데이터 추출
-        meta_el = li.select_one(".like_btn, [data-url][data-yy][data-shtm]")
-        if not meta_el: continue
-        
+        # 2. 제목을 h5 태그 안의 a 태그에서 추출합니다.
+        title_element = li.select_one("h5 a.ellip_2")
+        title = title_element.get_text(strip=True) if title_element else "제목 없음"
+
+        # 3. 상태를 .pin_area 안의 span 태그에서 추출합니다. (없을 경우 대비)
+        status_element = li.select_one(".pin_area span")
+        status = status_element.get_text(strip=True) if status_element else "모집 예정"
+
+        # 4. 상세 정보에 필요한 고유 데이터는 .card-body 태그에서 추출합니다.
+        meta_el = li.select_one(".card-body")
+        if not meta_el:
+            continue
+
         yy = meta_el.get("data-yy")
         shtm = meta_el.get("data-shtm")
         nonsubjcCd = meta_el.get("data-nonsubjc-cd")
         nonsubjcCrsCd = meta_el.get("data-nonsubjc-crs-cd")
         pageIndex = meta_el.get("data-page-index", "1")
         data_url = meta_el.get("data-url", "/web/nonSbjt/programDetail.do?mId=216&order=3")
-        
-        if not all([yy, shtm, nonsubjcCd, nonsubjcCrsCd]): continue
+
+        if not all([yy, shtm, nonsubjcCd, nonsubjcCrsCd]):
+            continue
 
         detailUrl = (f"{PKNUAI_BASE_URL}{data_url}&pageIndex={pageIndex}&yy={yy}&shtm={shtm}"
                      f"&nonsubjcCd={nonsubjcCd}&nonsubjcCrsCd={nonsubjcCrsCd}")
@@ -323,7 +333,7 @@ def _parse_pknuai_page(soup: BeautifulSoup) -> list:
             "yy": yy, "shtm": shtm, "nonsubjcCd": nonsubjcCd, "nonsubjcCrsCd": nonsubjcCrsCd
         })
     return programs
-
+    
 async def get_pknuai_programs() -> list:
     """PKNU AI 비교과 프로그램 목록을 가져옵니다 (로그인 포함)."""
     html_content = await fetch_program_html()
@@ -439,6 +449,13 @@ async def notice_menu_handler(callback: CallbackQuery):
     await callback.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📅 날짜로 검색", callback_data="filter_date"), InlineKeyboardButton(text="🗂️ 카테고리별 보기", callback_data="all_notices")]])
     await callback.message.edit_text("공지사항 옵션을 선택하세요:", reply_markup=keyboard)
+
+@dp.callback_query(lambda c: c.data == "filter_date")
+async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> None:
+    """날짜 필터링 시작"""
+    await callback.answer()
+    await callback.message.edit_text("📅 MM/DD 형식으로 날짜를 입력해 주세요. (예: 09/18)")
+    await state.set_state(FilterState.waiting_for_date)
     
 ################################################################################
 #                    ▼ 수정: 비교과 프로그램 메뉴 및 핸들러                          #
@@ -447,6 +464,13 @@ PROGRAM_FILTERS = [
     "1학년", "2학년", "3학년", "4학년", "도전", "소통", 
     "인성", "창의", "협업", "전문", "신청가능"
 ]
+PROGRAM_FILTER_MAP = {
+    "1학년": "searchGrade1", "2학년": "searchGrade2", 
+    "3학년": "searchGrade3", "4학년": "searchGrade4",
+    "도전": "searchIaq1", "소통": "searchIaq2", "인성": "searchIaq3",
+    "창의": "searchIaq4", "협업": "searchIaq5", "전문": "searchIaq6",
+    "신청가능": "searchApply"
+}
 @dp.callback_query(lambda c: c.data == "extracurricular_menu")
 def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     """AI 비교과 필터 메뉴 키보드를 생성합니다."""
@@ -595,7 +619,8 @@ async def callback_all_notices(callback: CallbackQuery, state: FSMContext) -> No
 async def callback_category_selection(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     category_code = callback.data.split("_")[1]
-    await callback.message.edit_text(f"카테고리 '{category_code}'의 공지사항을 검색합니다...")
+    category_name = next((name for name, code in CATEGORY_CODES.items() if code == category_code), category_code)
+    await callback.message.edit_text(f"카테고리 '{category_name}'의 공지사항을 검색합니다...")
 
     notices = await get_school_notices(category_code)
     if not notices:
