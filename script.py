@@ -175,58 +175,78 @@ push_pknuai_program_cache_changes = lambda: push_file_changes(PKNUAI_PROGRAM_CAC
 #                         웹페이지 크롤링 함수 (Playwright / aiohttp)                    #
 ################################################################################
 
+# 기존 fetch_program_html 함수를 지우고 아래 코드로 교체하세요.
 async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
-    """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수"""
+    """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수 (디버깅 강화 버전)"""
     if not PKNU_USERNAME or not PKNU_PASSWORD:
         logging.error("❌ PKNU_USERNAME 또는 PKNU_PASSWORD 환경 변수가 설정되지 않았습니다.")
         return ""
-    
+
+    page = None  # page 변수를 try 블록 외부에서 초기화
     logging.info(f"🚀 Playwright 작업 시작 (검색어: {keyword}, 필터: {filters})")
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"])
             page = await browser.new_page()
-            
-            await page.goto(PKNUAI_PROGRAM_URL, wait_until="domcontentloaded", timeout=30000)
 
+            # 1. 최초 페이지 이동
+            await page.goto(PKNUAI_PROGRAM_URL, wait_until="domcontentloaded", timeout=30000)
+            logging.info(f"1. 초기 페이지 접속 완료: {page.url}")
+            await page.screenshot(path="debug_screenshot_1_initial_page.png")
+
+            # 2. 로그인 처리
             if "sso.pknu.ac.kr" in page.url:
-                logging.info("SSO 로그인 페이지로 리다이렉트됨. 로그인을 시도합니다.")
+                logging.info("2. SSO 로그인 페이지로 리다이렉트됨. 로그인을 시도합니다.")
                 await page.wait_for_selector("input#userId", timeout=15000)
                 await page.fill("input#userId", PKNU_USERNAME)
                 await page.fill("input#userpw", PKNU_PASSWORD)
+                await page.screenshot(path="debug_screenshot_2_before_login_click.png")
                 await page.click('button[type="submit"]')
-            
-                logging.info("로그인 성공. 비교과 프로그램 페이지로 다시 이동합니다.")
+                
+                logging.info("3. 로그인 성공. 비교과 프로그램 페이지로 다시 이동합니다.")
+                # 로그인 후 원래 목적지로 재이동
                 await page.goto(PKNUAI_PROGRAM_URL, wait_until="networkidle", timeout=30000)
+                logging.info(f"4. 비교과 페이지 재접속 완료: {page.url}")
+            
+            await page.screenshot(path="debug_screenshot_3_after_login.png")
+            logging.info("5. 최종 페이지 로딩 완료. 현재 페이지 제목: " + await page.title())
 
-            if keyword:
-                logging.info(f"키워드 '{keyword}'로 검색합니다.")
-                # ▼▼▼ '#searchKeyword'를 실제 사이트의 검색창 id로 변경해야 합니다. ▼▼▼
-                await page.fill("#searchKeyword", keyword) 
-                await page.press("#searchKeyword", "Enter")
-                await page.wait_for_load_state("networkidle", timeout=15000)
-
-            if filters:
-                logging.info(f"필터를 적용합니다: {filters}")
+            # 6. 필터 적용
+            if filters and any(filters.values()):
+                logging.info(f"6. 필터를 적용합니다: {filters}")
                 for filter_name, is_selected in filters.items():
                     if is_selected:
                         input_id = PROGRAM_FILTER_MAP.get(filter_name)
-                        if input_id: await page.click(f"label[for='{input_id}']")
+                        if input_id:
+                            await page.click(f"label[for='{input_id}']")
                 await page.wait_for_timeout(2000)
+                await page.screenshot(path="debug_screenshot_4_after_filter.png")
+
+            # 7. 키워드 검색
+            if keyword:
+                logging.info(f"7. 키워드 '{keyword}'로 검색합니다.")
+                await page.fill("input#searchVal", keyword)
+                await page.click("button.btn.btn-outline-primary.btn_search")
+            
+            # 검색/필터 후 결과 로딩 대기
+            if keyword or (filters and any(filters.values())):
+                 logging.info("8. 검색/필터 결과 로딩을 기다립니다.")
+                 await page.wait_for_load_state("networkidle", timeout=20000)
+                 await page.screenshot(path="debug_screenshot_5_after_search.png")
 
             content = await page.content()
             await browser.close()
             logging.info("✅ Playwright 크롤링 성공")
             return content
-            
+
     except Exception as e:
         logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
-        if 'page' in locals():
-            try:
-                page_content_on_error = await page.content()
-                logging.error(f"오류 발생 당시 페이지 내용:\n{page_content_on_error[:1000]}")
-            except Exception as page_error:
-                logging.error(f"오류 페이지 콘텐츠를 가져오는 중 추가 오류 발생: {page_error}")
+        if page and not page.is_closed():
+            # 오류 발생 시 스크린샷과 HTML을 파일로 저장하여 원인 파악
+            await page.screenshot(path="debug_error_screenshot.png")
+            with open("debug_error_page.html", "w", encoding="utf-8") as f:
+                f.write(await page.content())
+            logging.error("오류 당시의 화면을 debug_error_screenshot.png 와 debug_error_page.html 로 저장했습니다.")
         return ""
 
 async def fetch_url(url: str) -> str:
@@ -588,20 +608,45 @@ def parse_date(date_str: str):
     except ValueError:
         return None
         
+# 기존 process_date_input 함수를 지우고 아래 최종 버전으로 교체하세요.
 @dp.message(FilterState.waiting_for_date)
-async def process_date_input(message: types.Message, state: FSMContext):
-    # ... 기존 날짜 처리 핸들러 (변경 없음)
+async def process_date_input(message: types.Message, state: FSMContext) -> None:
+    """날짜 입력을 처리하는 핸들러 (최종 수정 버전)"""
+    user_id_str = str(message.chat.id)
+    if user_id_str not in ALLOWED_USERS:
+        await message.answer("❌ 접근 권한이 없습니다.")
+        return
+
+    input_text = message.text.strip()
     try:
-        month, day = map(int, message.text.strip().split('/'))
-        filter_date = datetime(datetime.now().year, month, day)
+        # MM/DD 형식의 입력을 datetime 객체로 변환
+        filter_date_obj = datetime.strptime(input_text, "%m/%d")
     except ValueError:
-        await message.answer("⚠️ 날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요."); return
+        await message.answer("⚠️ 날짜 형식이 올바르지 않습니다. MM/DD 형식으로 다시 입력해 주세요.")
+        return
+
     await state.clear()
-    await message.answer(f"📅 {filter_date.strftime('%Y-%m-%d')} 날짜의 공지사항을 검색합니다...")
-    filtered_notices = [n for n in await get_school_notices() if (d := parse_date(n[3])) and d.date() == filter_date.date()]
-    if not filtered_notices: await message.answer(f"해당 날짜에 등록된 공지사항이 없습니다.")
+    await message.answer(f"📅 {input_text} 날짜의 공지사항을 검색합니다...")
+    
+    all_notices = await get_school_notices()
+    
+    filtered_notices = []
+    for notice_tuple in all_notices:
+        notice_date_str = notice_tuple[3] # (title, href, dept, date)
+        try:
+            # 공지사항의 YYYY.MM.DD 형식 날짜를 파싱
+            notice_date_obj = datetime.strptime(notice_date_str, "%Y.%m.%d")
+            # 월과 일이 모두 일치하는지 확인
+            if notice_date_obj.month == filter_date_obj.month and notice_date_obj.day == filter_date_obj.day:
+                filtered_notices.append(notice_tuple)
+        except ValueError:
+            continue # 날짜 형식이 다르면 건너뜀
+
+    if not filtered_notices:
+        await message.answer(f"📢 {input_text} 날짜에 해당하는 공지사항이 없습니다.")
     else:
-        for notice in filtered_notices: await send_notification(notice, message.chat.id)
+        for notice in filtered_notices:
+            await send_notification(notice, message.chat.id)
 
 @dp.callback_query(lambda c: c.data == "all_notices")
 async def callback_all_notices(callback: CallbackQuery, state: FSMContext) -> None:
