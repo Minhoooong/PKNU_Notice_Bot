@@ -199,37 +199,63 @@ async def fetch_dynamic_html(url: str, actions: callable = None) -> str:
         logging.error(f"❌ Playwright 크롤링 오류: {url}, {e}", exc_info=True)
         return ""
 
-async def fetch_pknuai_html() -> str:
-    """PKNU AI 시스템 크롤링 함수 (로그인 포함)"""
+async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
+    """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수"""
     if not PKNU_USERNAME or not PKNU_PASSWORD:
         logging.error("❌ PKNU_USERNAME 또는 PKNU_PASSWORD 환경 변수가 설정되지 않았습니다.")
         return ""
     
-    logging.info(f"🚀 Playwright로 PKNU AI 페이지 로딩 및 로그인 시작...")
+    logging.info(f"🚀 Playwright 작업 시작 (검색어: {keyword}, 필터: {filters})")
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"])
             page = await browser.new_page()
-            await page.goto(PKNUAI_PROGRAM_URL, wait_until="domcontentloaded")
+            
+            await page.goto(PROGRAM_URL, wait_until="domcontentloaded", timeout=30000)
 
-            # 로그인 페이지로 리다이렉트 되는 것을 기다림
-            await page.wait_for_selector("input#id", timeout=15000)
-            await page.fill("input#id", PKNU_USERNAME)
-            await page.fill("input#password", PKNU_PASSWORD)
-            await page.click("button.btn_login")
-            
-            # 로그인 후 프로그램 목록 페이지로 돌아오는 것을 기다림
-            await page.wait_for_selector("ul.row.flex-wrap.viewType > li", timeout=15000)
-            
+            # sso.pknu.ac.kr 페이지로 리다이렉트 되었는지 확인
+            if "sso.pknu.ac.kr" in page.url:
+                logging.info("SSO 로그인 페이지로 리다이렉트됨. 로그인을 시도합니다.")
+                
+                # --- 여기가 핵심 수정 부분 ---
+                # 1. 아이디 입력 (수정됨)
+                await page.wait_for_selector("input#userId", timeout=15000)
+                await page.fill("input#userId", PKNU_USERNAME)
+                
+                # 2. 비밀번호 입력 (수정됨)
+                await page.fill("input#userpw", PKNU_PASSWORD)
+                
+                # 3. 로그인 버튼 클릭 (수정됨)
+                await page.click('button[type="submit"]')
+                # --- 여기까지 ---
+
+            # 로그인 후 최종 목적지인 프로그램 목록 페이지 로딩을 기다림
+            await page.wait_for_url(f"{PROGRAM_BASE_URL}/web/nonSbjt/program.do**", timeout=20000)
+            await page.wait_for_selector("ul.row.flex-wrap.viewType", timeout=20000)
+            logging.info("로그인 및 기본 페이지 로딩 성공.")
+
+            # (이후 필터 및 검색 로직은 동일)
+            if keyword:
+                logging.info(f"키워드 '{keyword}'로 검색합니다.")
+                await page.fill("#searchKeyword", keyword)
+                await page.press("#searchKeyword", "Enter")
+                await page.wait_for_load_state("networkidle", timeout=15000)
+
+            if filters:
+                logging.info(f"필터를 적용합니다: {filters}")
+                for filter_name, is_selected in filters.items():
+                    if is_selected:
+                        input_id = PROGRAM_FILTER_MAP.get(filter_name)
+                        if input_id: await page.click(f"label[for='{input_id}']")
+                await page.wait_for_timeout(2000)
+
             content = await page.content()
             await browser.close()
-            logging.info("✅ PKNU AI 로그인 및 페이지 로딩 성공")
+            logging.info("✅ Playwright 크롤링 성공")
             return content
-    except PlaywrightTimeoutError:
-        logging.error("❌ PKNU AI 페이지 로딩/로그인 타임아웃. 선택자를 찾지 못했습니다.", exc_info=True)
-        return ""
+            
     except Exception as e:
-        logging.error(f"❌ PKNU AI 크롤링 중 오류 발생: {e}", exc_info=True)
+        logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
         return ""
 
 
