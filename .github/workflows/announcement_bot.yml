@@ -58,6 +58,8 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           MY_PAT: ${{ secrets.MY_PAT }}
           REGISTRATION_CODE: ${{ secrets.REGISTRATION_CODE }}
+          PKNU_USERNAME: ${{ secrets.PKNU_USERNAME }}
+          PKNU_PASSWORD: ${{ secrets.PKNU_PASSWORD }}
         run: python3 script.py
 
       - name: Trigger workflow re-run
