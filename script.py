@@ -24,6 +24,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+from urllib.parse import quote
 
 ################################################################################
 #                               환경 변수 / 토큰 / 상수 설정                          #
@@ -45,9 +46,20 @@ CACHE_FILE = "announcements_seen.json"
 WHITELIST_FILE = "whitelist.json"
 
 # ▼ 추가: PKNU AI 비교과 시스템
-PKNUAI_PROGRAM_URL = "https://pknuai.pknu.ac.kr/web/login/pknuLoginProc.do?mId=3&userId=202211223&returnUrl=https%3A%2F%2Fpknuai.pknu.ac.kr%2Fsso%2Findex.jsp"
 PKNUAI_BASE_URL = "https://pknuai.pknu.ac.kr"
 PKNUAI_PROGRAM_CACHE_FILE = "programs_seen.json"
+PKNUAI_LIST = "https://pknuai.pknu.ac.kr/web/nonSbjt/programList.do?mId=216"
+
+def build_pknuai_sso_bridge(user_id: str, return_url: str = PKNUAI_LIST) -> str:
+    """
+    서비스 특성상 '학번이 들어간 중간 링크'를 반드시 거쳐야 로그인 루프가 풀린다.
+    학번은 PKNU_USERNAME에서 받아 매번 동적으로 브리지 URL을 만든다.
+    """
+    encoded_return = quote(return_url, safe="")
+    return (
+        "https://pknuai.pknu.ac.kr/web/login/pknuLoginProc.do"
+        f"?mId=3&userId={user_id}&returnUrl={encoded_return}"
+    )
 
 
 CATEGORY_CODES = {
@@ -192,64 +204,100 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             )
             page = await browser.new_page()
 
-            # 1) 포털 접속
-            portal_login_url = "https://portal.pknu.ac.kr/"
-            await page.goto(portal_login_url, wait_until="domcontentloaded", timeout=60000)
-            logging.info(f"1. 포털 로그인 페이지 접속: {page.url}")
-
-            # 2) 로그인 폼이 페이지에 '직접' 있는지 먼저 확인 (iframe 전제 제거)
-            async def _find_login_scope():
-                # 페이지 직하 폼
+        bridge_url = build_pknuai_sso_bridge(PKNU_USERNAME, PKNUAI_LIST)
+        await page.goto(bridge_url, wait_until="domcontentloaded", timeout=60000)
+        logging.info(f"1. 브리지 URL 선진입: {page.url}")
+        await page.wait_for_load_state("networkidle", timeout=60000)
+        
+        # 무한 로그인 루프 가드
+        seen_urls = [page.url]
+        MAX_HOPS = 8
+        hops = 0
+        
+        async def looks_like_portal_login() -> bool:
+            url = page.url.lower()
+            if "portal.pknu.ac.kr" in url and ("login" in url or "/user/" in url):
+                return True
+            head = (await page.content())[:4000].lower()
+            return ("loginform" in head) or ("msaber_ajax" in head)
+        
+        async def find_login_scope():
+            # 페이지 직하
+            if await page.locator("form#LoginForm").count() > 0:
+                return page
+            # 프레임 내부
+            if await page.locator("iframe").count() > 0:
+                for fr in page.frames:
+                    try:
+                        if await fr.locator("form#LoginForm").count() > 0:
+                            return fr
+                        if await fr.locator("input#userId, input[name='userId']").count() > 0:
+                            return fr
+                    except Exception:
+                        continue
+            raise TimeoutError("로그인 폼을 찾지 못했습니다.")
+        
+        # 1) 포털 로그인 화면이면 로그인 폴백 수행
+        while hops < MAX_HOPS:
+            hops += 1
+        
+            if await looks_like_portal_login():
+                logging.info(f"2.{hops} 포털 로그인 감지: {page.url}")
+                scope = await find_login_scope()
+        
+                id_sel = "form#LoginForm input#userId, form#LoginForm input[name='userId'], input#userId, input[name='userId']"
+                pw_sel = "form#LoginForm input#userpw, form#LoginForm input[name='password'], input#userpw, input[name='password']"
+        
+                await scope.wait_for_selector(id_sel, state="visible", timeout=20000)
+                await scope.wait_for_selector(pw_sel, state="visible", timeout=20000)
+        
+                await scope.fill(id_sel, PKNU_USERNAME)
+                await scope.fill(pw_sel, PKNU_PASSWORD)
+        
+                # 제출: 버튼 → JS → Enter 3중 시도
+                submitted = False
                 try:
-                    await page.wait_for_selector("form#LoginForm", state="attached", timeout=4000)
-                    return page  # scope = page
+                    btn = scope.locator("form#LoginForm button[type='submit'], button[onclick*=\"mSABER_Ajax('idpwd')\"]")
+                    if await btn.count() > 0:
+                        await btn.first.click()
+                        submitted = True
                 except Exception:
                     pass
-                # 혹시나 프레임 안으로 들어갈 수도 있으니 보수적으로 탐색
-                try:
-                    await page.wait_for_selector("iframe", state="attached", timeout=4000)
-                    for fr in page.frames:
-                        try:
-                            await fr.wait_for_selector("form#LoginForm", state="attached", timeout=1500)
-                            return fr  # scope = 해당 frame
-                        except Exception:
-                            continue
-                except Exception:
-                    pass
-                raise TimeoutError("로그인 폼(form#LoginForm)을 찾지 못했습니다.")
-
-            scope = await _find_login_scope()
-            logging.info("2. 로그인 폼을 찾았습니다. 로그인을 시도합니다.")
-
-            # 3) ID/PW 필드 대기 및 입력 (이 페이지의 실제 필드명에 맞춤)
-            await scope.wait_for_selector("form#LoginForm input#userId, form#LoginForm input[name='userId']",
-                                          state="visible", timeout=20000)
-            await scope.wait_for_selector("form#LoginForm input#userpw, form#LoginForm input[name='password']",
-                                          state="visible", timeout=20000)
-
-            await scope.fill("form#LoginForm input#userId, form#LoginForm input[name='userId']", PKNU_USERNAME)
-            await scope.fill("form#LoginForm input#userpw, form#LoginForm input[name='password']", PKNU_PASSWORD)
-
-            # 4) 제출 버튼 클릭 (폼 onsubmit=false이므로 버튼 클릭으로 mSABER_Ajax('idpwd') 실행)
-            await scope.locator("form#LoginForm button[type='submit']").click()
-
-            # 5) 로그인 후 네트워크 안정화
-            await page.wait_for_load_state("networkidle", timeout=60000)
-            logging.info("3. 포털 로그인 후 상태 안정화 완료")
-            try:
-                await page.screenshot(path="debug_portal_after_login.png", full_page=True)
-            except Exception:
-                pass
-
-            # 6) 비교과 프로그램 페이지로 이동
-            logging.info("4. 비교과 프로그램 페이지로 이동합니다.")
-            await page.goto(PKNUAI_PROGRAM_URL, wait_until="domcontentloaded", timeout=60000)
-            logging.info(f"5. 비교과 페이지 접속 완료: {page.url}")
-            logging.info(f"6. 최종 페이지 제목: {await page.title()}")
-            try:
-                await page.screenshot(path="debug_final_program_page.png", full_page=True)
-            except Exception:
-                pass
+                if not submitted:
+                    try:
+                        await scope.evaluate("() => window.mSABER_Ajax && window.mSABER_Ajax('idpwd')")
+                        submitted = True
+                    except Exception:
+                        pass
+                if not submitted:
+                    try:
+                        await scope.locator(pw_sel).press("Enter")
+                        submitted = True
+                    except Exception:
+                        pass
+                if not submitted:
+                    raise RuntimeError("로그인 제출 실패(버튼/JS/Enter 모두 실패)")
+        
+                await page.wait_for_load_state("networkidle", timeout=60000)
+        
+            # 위치 변화 추적(무한 루프 방지)
+            cur = page.url
+            if cur not in seen_urls:
+                seen_urls.append(cur)
+            else:
+                if seen_urls.count(cur) >= 2:
+                    logging.warning("같은 URL 반복 → 브리지 재진입")
+                    await page.goto(bridge_url, wait_until="domcontentloaded", timeout=60000)
+                    await page.wait_for_load_state("networkidle", timeout=60000)
+        
+            # 비교과 목록 도달하면 탈출
+            if "pknuai.pknu.ac.kr" in page.url and "programList.do" in page.url:
+                break
+        
+        if hops >= MAX_HOPS and ("programList.do" not in page.url):
+            raise RuntimeError("SSO/리다이렉트 홉 초과(무한 로그인 루프)")
+        
+        logging.info(f"3. 비교과 페이지 진입 완료: {page.url} / 제목: {await page.title()}")
 
             # 7) 필터 적용
             if filters and any(filters.values()):
@@ -461,7 +509,7 @@ async def check_for_new_pknuai_programs(target_chat_id: str):
         key = generate_cache_key(program['title'], unique_id)
         if key not in seen:
             logging.info(f"새 AI 비교과 프로그램 발견: {program['title']}")
-            await send_program_notification(program, target_chat_id)
+            await send_pknuai_program_notification(program, target_chat_id)
             seen[key] = True
             found = True
     if found:
@@ -536,7 +584,6 @@ PROGRAM_FILTER_MAP = {
     "창의": "searchIaq4", "협업": "searchIaq5", "전문": "searchIaq6",
     "신청가능": "searchApply"
 }
-@dp.callback_query(lambda c: c.data == "extracurricular_menu")
 def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     """AI 비교과 필터 메뉴 키보드를 생성합니다."""
     user_filters = ALLOWED_USERS.get(str(chat_id), {}).get("filters", {})
