@@ -204,124 +204,124 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             )
             page = await browser.new_page()
 
-        bridge_url = build_pknuai_sso_bridge(PKNU_USERNAME, PKNUAI_LIST)
-        await page.goto(bridge_url, wait_until="domcontentloaded", timeout=60000)
-        logging.info(f"1. 브리지 URL 선진입: {page.url}")
-        await page.wait_for_load_state("networkidle", timeout=60000)
-        
-        # 무한 로그인 루프 가드
-        seen_urls = [page.url]
-        MAX_HOPS = 8
-        hops = 0
-        
-        async def looks_like_portal_login() -> bool:
-            url = page.url.lower()
-            if "portal.pknu.ac.kr" in url and ("login" in url or "/user/" in url):
-                return True
-            head = (await page.content())[:4000].lower()
-            return ("loginform" in head) or ("msaber_ajax" in head)
-        
-        async def find_login_scope():
-            # 페이지 직하
-            if await page.locator("form#LoginForm").count() > 0:
-                return page
-            # 프레임 내부
-            if await page.locator("iframe").count() > 0:
-                for fr in page.frames:
-                    try:
-                        if await fr.locator("form#LoginForm").count() > 0:
-                            return fr
-                        if await fr.locator("input#userId, input[name='userId']").count() > 0:
-                            return fr
-                    except Exception:
-                        continue
-            raise TimeoutError("로그인 폼을 찾지 못했습니다.")
-        
-        # 1) 포털 로그인 화면이면 로그인 폴백 수행
-        while hops < MAX_HOPS:
-            hops += 1
-        
-            if await looks_like_portal_login():
-                logging.info(f"2.{hops} 포털 로그인 감지: {page.url}")
-                scope = await find_login_scope()
-        
-                id_sel = "form#LoginForm input#userId, form#LoginForm input[name='userId'], input#userId, input[name='userId']"
-                pw_sel = "form#LoginForm input#userpw, form#LoginForm input[name='password'], input#userpw, input[name='password']"
-        
-                await scope.wait_for_selector(id_sel, state="visible", timeout=20000)
-                await scope.wait_for_selector(pw_sel, state="visible", timeout=20000)
-        
-                await scope.fill(id_sel, PKNU_USERNAME)
-                await scope.fill(pw_sel, PKNU_PASSWORD)
-        
-                # 제출: 버튼 → JS → Enter 3중 시도
-                submitted = False
+    bridge_url = build_pknuai_sso_bridge(PKNU_USERNAME, PKNUAI_LIST)
+    await page.goto(bridge_url, wait_until="domcontentloaded", timeout=60000)
+    logging.info(f"1. 브리지 URL 선진입: {page.url}")
+    await page.wait_for_load_state("networkidle", timeout=60000)
+    
+    # 무한 로그인 루프 가드
+    seen_urls = [page.url]
+    MAX_HOPS = 8
+    hops = 0
+    
+    async def looks_like_portal_login() -> bool:
+        url = page.url.lower()
+        if "portal.pknu.ac.kr" in url and ("login" in url or "/user/" in url):
+            return True
+        head = (await page.content())[:4000].lower()
+        return ("loginform" in head) or ("msaber_ajax" in head)
+    
+    async def find_login_scope():
+        # 페이지 직하
+        if await page.locator("form#LoginForm").count() > 0:
+            return page
+        # 프레임 내부
+        if await page.locator("iframe").count() > 0:
+            for fr in page.frames:
                 try:
-                    btn = scope.locator("form#LoginForm button[type='submit'], button[onclick*=\"mSABER_Ajax('idpwd')\"]")
-                    if await btn.count() > 0:
-                        await btn.first.click()
-                        submitted = True
+                    if await fr.locator("form#LoginForm").count() > 0:
+                        return fr
+                    if await fr.locator("input#userId, input[name='userId']").count() > 0:
+                        return fr
+                except Exception:
+                    continue
+        raise TimeoutError("로그인 폼을 찾지 못했습니다.")
+    
+    # 1) 포털 로그인 화면이면 로그인 폴백 수행
+    while hops < MAX_HOPS:
+        hops += 1
+    
+        if await looks_like_portal_login():
+            logging.info(f"2.{hops} 포털 로그인 감지: {page.url}")
+            scope = await find_login_scope()
+    
+            id_sel = "form#LoginForm input#userId, form#LoginForm input[name='userId'], input#userId, input[name='userId']"
+            pw_sel = "form#LoginForm input#userpw, form#LoginForm input[name='password'], input#userpw, input[name='password']"
+    
+            await scope.wait_for_selector(id_sel, state="visible", timeout=20000)
+            await scope.wait_for_selector(pw_sel, state="visible", timeout=20000)
+    
+            await scope.fill(id_sel, PKNU_USERNAME)
+            await scope.fill(pw_sel, PKNU_PASSWORD)
+    
+            # 제출: 버튼 → JS → Enter 3중 시도
+            submitted = False
+            try:
+                btn = scope.locator("form#LoginForm button[type='submit'], button[onclick*=\"mSABER_Ajax('idpwd')\"]")
+                if await btn.count() > 0:
+                    await btn.first.click()
+                    submitted = True
+            except Exception:
+                pass
+            if not submitted:
+                try:
+                    await scope.evaluate("() => window.mSABER_Ajax && window.mSABER_Ajax('idpwd')")
+                    submitted = True
                 except Exception:
                     pass
-                if not submitted:
-                    try:
-                        await scope.evaluate("() => window.mSABER_Ajax && window.mSABER_Ajax('idpwd')")
-                        submitted = True
-                    except Exception:
-                        pass
-                if not submitted:
-                    try:
-                        await scope.locator(pw_sel).press("Enter")
-                        submitted = True
-                    except Exception:
-                        pass
-                if not submitted:
-                    raise RuntimeError("로그인 제출 실패(버튼/JS/Enter 모두 실패)")
-        
+            if not submitted:
+                try:
+                    await scope.locator(pw_sel).press("Enter")
+                    submitted = True
+                except Exception:
+                    pass
+            if not submitted:
+                raise RuntimeError("로그인 제출 실패(버튼/JS/Enter 모두 실패)")
+    
+            await page.wait_for_load_state("networkidle", timeout=60000)
+    
+        # 위치 변화 추적(무한 루프 방지)
+        cur = page.url
+        if cur not in seen_urls:
+            seen_urls.append(cur)
+        else:
+            if seen_urls.count(cur) >= 2:
+                logging.warning("같은 URL 반복 → 브리지 재진입")
+                await page.goto(bridge_url, wait_until="domcontentloaded", timeout=60000)
                 await page.wait_for_load_state("networkidle", timeout=60000)
-        
-            # 위치 변화 추적(무한 루프 방지)
-            cur = page.url
-            if cur not in seen_urls:
-                seen_urls.append(cur)
-            else:
-                if seen_urls.count(cur) >= 2:
-                    logging.warning("같은 URL 반복 → 브리지 재진입")
-                    await page.goto(bridge_url, wait_until="domcontentloaded", timeout=60000)
-                    await page.wait_for_load_state("networkidle", timeout=60000)
-        
-            # 비교과 목록 도달하면 탈출
-            if "pknuai.pknu.ac.kr" in page.url and "programList.do" in page.url:
-                break
-        
-        if hops >= MAX_HOPS and ("programList.do" not in page.url):
-            raise RuntimeError("SSO/리다이렉트 홉 초과(무한 로그인 루프)")
-        
-        logging.info(f"3. 비교과 페이지 진입 완료: {page.url} / 제목: {await page.title()}")
+    
+        # 비교과 목록 도달하면 탈출
+        if "pknuai.pknu.ac.kr" in page.url and "programList.do" in page.url:
+            break
+    
+    if hops >= MAX_HOPS and ("programList.do" not in page.url):
+        raise RuntimeError("SSO/리다이렉트 홉 초과(무한 로그인 루프)")
+    
+    logging.info(f"3. 비교과 페이지 진입 완료: {page.url} / 제목: {await page.title()}")
 
-        # 7) 필터 적용
-        if filters and any(filters.values()):
-            logging.info(f"필터를 적용합니다: {filters}")
-            for filter_name, is_selected in filters.items():
-                if is_selected:
-                    input_id = PROGRAM_FILTER_MAP.get(filter_name)
-                    if input_id:
-                        await page.click(f"label[for='{input_id}']")
-            await page.wait_for_timeout(500)  # 약간의 렌더 지연 여유
+    # 7) 필터 적용
+    if filters and any(filters.values()):
+        logging.info(f"필터를 적용합니다: {filters}")
+        for filter_name, is_selected in filters.items():
+            if is_selected:
+                input_id = PROGRAM_FILTER_MAP.get(filter_name)
+                if input_id:
+                    await page.click(f"label[for='{input_id}']")
+        await page.wait_for_timeout(500)  # 약간의 렌더 지연 여유
 
-        # 8) 키워드 검색
-        if keyword:
-            logging.info(f"키워드 '{keyword}'로 검색합니다.")
-            await page.fill("input#searchVal", keyword)
-            await page.click("button.btn.btn-outline-primary.btn_search")
+    # 8) 키워드 검색
+    if keyword:
+        logging.info(f"키워드 '{keyword}'로 검색합니다.")
+        await page.fill("input#searchVal", keyword)
+        await page.click("button.btn.btn-outline-primary.btn_search")
 
-        if keyword or (filters and any(filters.values())):
-            await page.wait_for_load_state("networkidle", timeout=30000)
+    if keyword or (filters and any(filters.values())):
+        await page.wait_for_load_state("networkidle", timeout=30000)
 
-            content = await page.content()
-            await browser.close()
-            logging.info("✅ Playwright 크롤링 성공")
-            return content
+        content = await page.content()
+        await browser.close()
+        logging.info("✅ Playwright 크롤링 성공")
+        return content
 
     except Exception as e:
         logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
