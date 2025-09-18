@@ -196,9 +196,8 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                 await page.fill("input#userpw", PKNU_PASSWORD)
                 await page.click('button[type="submit"]')
             
-            logging.info("로그인 후 페이지 로딩을 기다립니다...")
-            await page.wait_for_load_state("networkidle", timeout=30000) 
-            logging.info("페이지 로딩 완료. 콘텐츠를 가져옵니다.")
+                logging.info("로그인 성공. 비교과 프로그램 페이지로 다시 이동합니다.")
+                await page.goto(PKNUAI_PROGRAM_URL, wait_until="networkidle", timeout=30000)
 
             if keyword:
                 logging.info(f"키워드 '{keyword}'로 검색합니다.")
@@ -528,9 +527,43 @@ async def compare_programs_handler(callback: CallbackQuery):
     ])
     await callback.message.edit_text("AI 비교과 프로그램입니다. 원하시는 기능을 선택하세요:", reply_markup=keyboard)
 
+@dp.callback_query(lambda c: c.data == "keyword_search")
+async def keyword_search_handler(callback: CallbackQuery, state: FSMContext):
+    """키워드 검색을 시작하는 핸들러"""
+    await callback.answer()
+    await callback.message.edit_text("🔎 검색할 키워드를 입력해 주세요:")
+    await state.set_state(KeywordSearchState.waiting_for_keyword)
+
+@dp.message(KeywordSearchState.waiting_for_keyword)
+async def process_keyword_search(message: types.Message, state: FSMContext):
+    """키워드 입력을 처리하고, 검색된 프로그램을 가져와 전송"""
+    keyword = message.text.strip()
+    await state.clear()
+
+    await message.answer(f"🔍 '{keyword}' 키워드로 검색 중입니다... (로그인 필요)")
+    html_content = await fetch_program_html(keyword=keyword)
+
+    programs = []
+    if html_content:
+        soup = BeautifulSoup(html_content, 'html.parser')
+        programs = _parse_pknuai_page(soup)
+
+    if not programs:
+        await message.answer(f"❌ '{keyword}' 키워드에 해당하는 프로그램이 없습니다.")
+    else:
+        for program in programs:
+            await send_pknuai_program_notification(program, message.chat.id)
+
 ################################################################################
 #                            기타 상태 및 메시지 핸들러                            #
 ################################################################################
+def parse_date(date_str: str):
+    """다양한 날짜 형식을 처리하는 함수"""
+    try:
+        return datetime.strptime(date_str, "%Y.%m.%d")
+    except ValueError:
+        return None
+        
 @dp.message(FilterState.waiting_for_date)
 async def process_date_input(message: types.Message, state: FSMContext):
     # ... 기존 날짜 처리 핸들러 (변경 없음)
@@ -545,6 +578,32 @@ async def process_date_input(message: types.Message, state: FSMContext):
     if not filtered_notices: await message.answer(f"해당 날짜에 등록된 공지사항이 없습니다.")
     else:
         for notice in filtered_notices: await send_notification(notice, message.chat.id)
+
+@dp.callback_query(lambda c: c.data == "all_notices")
+async def callback_all_notices(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=category, callback_data=f"category_{code}")]
+            for category, code in CATEGORY_CODES.items()
+        ]
+    )
+    await callback.message.edit_text("원하는 카테고리를 선택하세요:", reply_markup=keyboard)
+    await state.set_state(FilterState.selecting_category)
+
+@dp.callback_query(lambda c: c.data.startswith("category_"))
+async def callback_category_selection(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    category_code = callback.data.split("_")[1]
+    await callback.message.edit_text(f"카테고리 '{category_code}'의 공지사항을 검색합니다...")
+
+    notices = await get_school_notices(category_code)
+    if not notices:
+        await callback.message.answer("해당 카테고리의 공지사항이 없습니다.")
+    else:
+        for notice in notices[:7]: # 최신 7개만 전송
+            await send_notification(notice, callback.message.chat.id)
+    await state.clear()
 
 @dp.message()
 async def catch_all(message: types.Message):
