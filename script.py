@@ -176,7 +176,7 @@ push_pknuai_program_cache_changes = lambda: push_file_changes(PKNUAI_PROGRAM_CAC
 ################################################################################
 
 async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
-    """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수 (최종 수정)**"""
+    """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수 (iframe 최종 로직)**"""
     if not PKNU_USERNAME or not PKNU_PASSWORD:
         logging.error("❌ PKNU_USERNAME 또는 PKNU_PASSWORD 환경 변수가 설정되지 않았습니다.")
         return ""
@@ -191,21 +191,22 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             # 1. 부경대학교 포털 로그인 페이지로 직접 이동
             portal_login_url = "https://portal.pknu.ac.kr/"
             await page.goto(portal_login_url, wait_until="networkidle", timeout=30000)
-            logging.info(f"1. 포털 로그인 페이지 접속 완료: {page.url}")
+            logging.info(f"1. 포털 로그인 페이지 접속: {page.url}")
 
-            # ▼▼▼▼▼ 핵심 수정 부분 ▼▼▼▼▼
-            # 2. ID 입력창('#userId')이 화면에 나타날 때까지 명시적으로 기다립니다.
-            await page.wait_for_selector("input#userId", timeout=20000)
-            logging.info("2. 로그인 폼 확인 완료. 로그인을 시도합니다.")
+            # ▼▼▼▼▼ 핵심 수정 부분: iframe을 정확하게 찾아서 작업 ▼▼▼▼▼
+            # 2. 페이지 안의 첫 번째 iframe을 찾습니다. 포털의 로그인 폼은 보통 첫 번째 iframe에 있습니다.
+            #    frame_locator는 해당 프레임이 나타날 때까지 기다려주는 기능이 포함되어 있습니다.
+            login_frame = page.frame_locator("iframe").first
+            logging.info("2. 로그인 폼(iframe)을 찾았습니다. 로그인을 시도합니다.")
 
-            # 3. 알려주신 정확한 ID와 비밀번호 입력창 ID를 사용합니다.
-            await page.fill("input#userId", PKNU_USERNAME)
-            await page.fill("input#userpw", PKNU_PASSWORD)
+            # 3. iframe 내부의 ID와 비밀번호 입력창에 정보를 입력합니다.
+            await login_frame.locator("input#userId").fill(PKNU_USERNAME)
+            await login_frame.locator("input#userpw").fill(PKNU_PASSWORD)
             await page.screenshot(path="debug_portal_login.png")
             
-            # 4. 알려주신 정확한 로그인 버튼 선택자를 사용합니다.
-            await page.click('button[type="submit"]')
-            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            # 4. iframe 내부의 로그인 버튼을 클릭합니다.
+            await login_frame.locator('button[type="submit"]').click()
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
             
             await page.wait_for_load_state("networkidle", timeout=30000)
             logging.info("3. 포털 로그인 성공. 현재 페이지: " + await page.title())
@@ -217,7 +218,7 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             logging.info(f"5. 비교과 페이지 접속 완료: {page.url}")
             logging.info(f"6. 최종 페이지 제목: {await page.title()}")
             await page.screenshot(path="debug_final_program_page.png")
-
+            
             # 이하 필터링 및 검색 로직은 이전 답변과 동일하게 유지
             if filters and any(filters.values()):
                 logging.info(f"필터를 적용합니다: {filters}")
