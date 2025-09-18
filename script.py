@@ -194,8 +194,8 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             logging.info(f"1. 포털 로그인 페이지 접속: {page.url}")
 
             # 2. 아이디와 비밀번호 입력 후 로그인
-            await page.fill("input#id", PKNU_USERNAME)
-            await page.fill("input#password", PKNU_PASSWORD)
+            await page.fill("input#userId", PKNU_USERNAME)
+            await page.fill("input#userpw", PKNU_PASSWORD)
             await page.screenshot(path="debug_portal_login.png")
             
             # 로그인 버튼 클릭 후, 페이지가 완전히 로드될 때까지 기다림
