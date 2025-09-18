@@ -163,8 +163,8 @@ save_cache = lambda data: save_json_file(data, CACHE_FILE)
 push_cache_changes = lambda: push_file_changes(CACHE_FILE, "Update announcements_seen.json")
 
 load_program_cache = lambda: load_json_file(PKNUAI_PROGRAM_CACHE_FILE)
-save_program_cache = lambda data: save_json_file(data, PROGRAM_CACHE_FILE)
-push_program_cache_changes = lambda: push_file_changes(PROGRAM_CACHE_FILE, "Update programs_seen.json")
+save_program_cache = lambda data: save_pknuai_program_cache(data)
+push_program_cache_changes = lambda: push_pknuai_program_cache_changes()
 
 # ▼ 추가: PKNU AI 프로그램 캐시 함수
 load_pknuai_program_cache = lambda: load_json_file(PKNUAI_PROGRAM_CACHE_FILE)
@@ -492,12 +492,24 @@ async def my_programs_handler(callback: CallbackQuery):
     user_filters = ALLOWED_USERS.get(user_id_str, {}).get("filters", {})
 
     if not any(user_filters.values()):
-        # ... 필터가 설정되지 않았을 때의 처리 ...
+        # 필터가 설정되지 않았을 때 필터 설정 메뉴를 보여줍니다.
+        keyboard = get_program_filter_keyboard(callback.message.chat.id)
+        await callback.message.edit_text("🎯 먼저 필터를 선택해주세요:", reply_markup=keyboard)
         return
 
     status_msg = await callback.message.edit_text("📊 필터로 검색 중... (로그인 필요)")
-    # get_programs 함수는 내부적으로 fetch_program_html을 호출함
-    programs = await get_programs(user_filters=user_filters) 
+
+    # ▼▼▼▼▼ 핵심 수정 부분 ▼▼▼▼▼
+    # 1. 필터를 적용하여 HTML을 가져옵니다.
+    html_content = await fetch_program_html(filters=user_filters)
+
+    # 2. 가져온 HTML을 파싱합니다.
+    programs = []
+    if html_content:
+        soup = BeautifulSoup(html_content, 'html.parser')
+        programs = _parse_pknuai_page(soup)
+    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+
     await status_msg.delete()
 
     if not programs:
