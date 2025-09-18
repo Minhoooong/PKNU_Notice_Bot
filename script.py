@@ -190,7 +190,7 @@ push_pknuai_program_cache_changes = lambda: push_file_changes(PKNUAI_PROGRAM_CAC
 async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
     """
     PKNU AI 비교과 페이지 HTML 수집:
-      1) 학번 포함 SSO 브리지 URL로 선진입 (무한 로그인 루프 방지)
+      1) 학번 포함 브리지 URL(pknuLoginProc.do)로 '먼저' 진입
       2) 필요 시 포털 로그인 폴백(버튼→JS→Enter 3중 시도, 프레임/직하 자동탐색)
       3) 비교과 목록 도달 후 필터/키워드 검색 적용, 최종 HTML 반환
     필요 상수/함수: PKNU_USERNAME, PKNU_PASSWORD, PKNUAI_LIST, PROGRAM_FILTER_MAP, build_pknuai_sso_bridge
@@ -206,7 +206,7 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
     browser = None
 
     try:
-        from playwright.async_api import async_playwright  # 안전상 재확인
+        from playwright.async_api import async_playwright, Page, Frame  # 안전상 재확인
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
@@ -220,11 +220,24 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             )
             page = await context.new_page()
 
-            # 0) 학번 포함 '브리지 URL'로 선진입
+            # 0) 학번 포함 '브리지 URL'로 선진입 (여기가 반드시 pknuLoginProc.do 여야 함)
             bridge_url = build_pknuai_sso_bridge(PKNU_USERNAME, PKNUAI_LIST)
+            if "pknuLoginProc.do" not in bridge_url:
+                logging.error(f"❌ bridge_url 이상: {bridge_url}")
+                return ""
             await page.goto(bridge_url, wait_until="domcontentloaded", timeout=60000)
             logging.info(f"1. 브리지 URL 선진입: {page.url}")
             await page.wait_for_load_state("networkidle", timeout=60000)
+
+            # 혹시 브리지 건너뛰고 목록으로 바로 가서 404가 나오면, 브리지 재시도
+            try:
+                title = (await page.title()).strip()
+            except Exception:
+                title = ""
+            if ("programList.do" in page.url) and (title == "404 Not Found"):
+                logging.warning("브리지 미적용으로 보이는 404 감지 → 브리지 재진입")
+                await page.goto(bridge_url, wait_until="domcontentloaded", timeout=60000)
+                await page.wait_for_load_state("networkidle", timeout=60000)
 
             # 무한 로그인 루프 가드
             seen_urls = {page.url}
@@ -238,7 +251,7 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                 head = (await page.content())[:4000].lower()
                 return ("loginform" in head) or ("msaber_ajax" in head)
 
-            async def find_login_scope():
+            async def find_login_scope() -> Frame | Page:
                 # 페이지 직하
                 if await page.locator("form#LoginForm").count() > 0:
                     return page
@@ -309,11 +322,19 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                     seen_urls.add(cur)
 
                 # 비교과 목록 도달하면 탈출
-                if "pknuai.pknu.ac.kr" in page.url and "programList.do" in page.url:
+                if ("pknuai.pknu.ac.kr" in page.url) and ("programList.do" in page.url):
                     break
 
-            if hops >= MAX_HOPS and ("programList.do" not in page.url):
-                raise RuntimeError("SSO/리다이렉트 홉 초과(무한 로그인 루프)")
+            # 마지막으로 '404 Not Found' 방지 체크
+            try:
+                title = (await page.title()).strip()
+            except Exception:
+                title = ""
+            if ("programList.do" not in page.url) or (title == "404 Not Found"):
+                # 브리지를 한 번 더 강제해서 마무리
+                logging.warning(f"도달 실패 또는 404(title={title}) → 최종 브리지 재진입")
+                await page.goto(bridge_url, wait_until="domcontentloaded", timeout=60000)
+                await page.wait_for_load_state("networkidle", timeout=60000)
 
             logging.info(f"3. 비교과 페이지 진입 완료: {page.url} / 제목: {await page.title()}")
 
@@ -374,6 +395,7 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                 await browser.close()
         except Exception:
             pass
+
 
 
 async def fetch_url(url: str) -> str:
