@@ -176,7 +176,7 @@ push_pknuai_program_cache_changes = lambda: push_file_changes(PKNUAI_PROGRAM_CAC
 ################################################################################
 
 async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
-    """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수 (포털 로그인 방식)**"""
+    """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수 (iframe 로그인 방식)**"""
     if not PKNU_USERNAME or not PKNU_PASSWORD:
         logging.error("❌ PKNU_USERNAME 또는 PKNU_PASSWORD 환경 변수가 설정되지 않았습니다.")
         return ""
@@ -193,22 +193,34 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             await page.goto(portal_login_url, wait_until="domcontentloaded", timeout=30000)
             logging.info(f"1. 포털 로그인 페이지 접속: {page.url}")
 
-            # 2. 아이디와 비밀번호 입력 후 로그인
-            await page.fill("input#userId", PKNU_USERNAME)
-            await page.fill("input#userpw", PKNU_PASSWORD)
+            # ▼▼▼▼▼ 핵심 수정 부분: iframe 내부로 접근 ▼▼▼▼▼
+            # 2. 로그인 폼이 담긴 iframe을 찾을 때까지 기다림
+            # 포털 사이트의 로그인 폼은 'ifrm_login'이라는 id를 가진 iframe 내부에 있습니다.
+            login_frame = page.frame(name="ifrm_login")
+            if not login_frame:
+                await page.wait_for_selector("iframe[name='ifrm_login']", timeout=15000)
+                login_frame = page.frame(name="ifrm_login")
+
+            logging.info("2. 로그인 폼(iframe) 확인 완료. 로그인을 시도합니다.")
+
+            # 3. iframe 내부의 요소에 아이디와 비밀번호 입력
+            await login_frame.fill("input#userId", PKNU_USERNAME)
+            await login_frame.fill("input#userpw", PKNU_PASSWORD)
             await page.screenshot(path="debug_portal_login.png")
             
-            # 로그인 버튼 클릭 후, 페이지가 완전히 로드될 때까지 기다림
-            await page.click('button[type="submit"]')
+            # 4. iframe 내부의 로그인 버튼 클릭
+            await login_frame.click('button[type="submit"]')
+            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            
             await page.wait_for_load_state("networkidle", timeout=30000)
-            logging.info("2. 포털 로그인 성공. 현재 페이지: " + await page.title())
+            logging.info("3. 포털 로그인 성공. 현재 페이지: " + await page.title())
             await page.screenshot(path="debug_portal_main.png")
 
-            # 3. 로그인이 완료된 세션을 가지고 비교과 프로그램 페이지로 이동
-            logging.info("3. 비교과 프로그램 페이지로 이동합니다.")
+            # 4. 로그인이 완료된 세션을 가지고 비교과 프로그램 페이지로 이동
+            logging.info("4. 비교과 프로그램 페이지로 이동합니다.")
             await page.goto(PKNUAI_PROGRAM_URL, wait_until="networkidle", timeout=30000)
-            logging.info(f"4. 비교과 페이지 접속 완료: {page.url}")
-            logging.info(f"5. 최종 페이지 제목: {await page.title()}")
+            logging.info(f"5. 비교과 페이지 접속 완료: {page.url}")
+            logging.info(f"6. 최종 페이지 제목: {await page.title()}")
             await page.screenshot(path="debug_final_program_page.png")
 
             # 6. 필터 적용
