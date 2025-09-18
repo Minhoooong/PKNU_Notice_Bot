@@ -187,7 +187,7 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             browser = await p.chromium.launch(headless=True, args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"])
             page = await browser.new_page()
             
-            await page.goto(PROGRAM_URL, wait_until="domcontentloaded", timeout=30000)
+            await page.goto(PKNUAI_PROGRAM_URL, wait_until="domcontentloaded", timeout=30000)
 
             # sso.pknu.ac.kr 페이지로 리다이렉트 되었는지 확인
             if "sso.pknu.ac.kr" in page.url:
@@ -206,7 +206,7 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                 # --- 여기까지 ---
 
             # 로그인 후 최종 목적지인 프로그램 목록 페이지 로딩을 기다림
-            await page.wait_for_url(f"{PROGRAM_BASE_URL}/web/nonSbjt/program.do**", timeout=20000)
+            await page.wait_for_url(f"{PKNUAI_BASE_URL}/web/nonSbjt/program.do**", timeout=20000)
             await page.wait_for_selector("ul.row.flex-wrap.viewType", timeout=20000)
             logging.info("로그인 및 기본 페이지 로딩 성공.")
 
