@@ -452,6 +452,11 @@ async def notice_menu_handler(callback: CallbackQuery):
 ################################################################################
 @dp.callback_query(lambda c: c.data == "extracurricular_menu")
 
+PROGRAM_FILTERS = [
+    "1학년", "2학년", "3학년", "4학년", "도전", "소통", 
+    "인성", "창의", "협업", "전문", "신청가능"
+]
+
 def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     """AI 비교과 필터 메뉴 키보드를 생성합니다."""
     user_filters = ALLOWED_USERS.get(str(chat_id), {}).get("filters", {})
