@@ -44,15 +44,10 @@ BASE_URL = 'https://www.pknu.ac.kr'
 CACHE_FILE = "announcements_seen.json"
 WHITELIST_FILE = "whitelist.json"
 
-# 레인보우 비교과 시스템
-PROGRAM_URL = "https://rainbow.pknu.ac.kr/main/CAP/C/C/A/list.do"
-PROGRAM_BASE_URL = "https://rainbow.pknu.ac.kr"
-PROGRAM_CACHE_FILE = "programs_seen.json"
-
 # ▼ 추가: PKNU AI 비교과 시스템
 PKNUAI_PROGRAM_URL = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
 PKNUAI_BASE_URL = "https://pknuai.pknu.ac.kr"
-PKNUAI_PROGRAM_CACHE_FILE = "pknuai_programs_seen.json"
+PKNUAI_PROGRAM_CACHE_FILE = "programs_seen.json"
 
 
 CATEGORY_CODES = {
@@ -179,25 +174,6 @@ push_pknuai_program_cache_changes = lambda: push_file_changes(PKNUAI_PROGRAM_CAC
 ################################################################################
 #                         웹페이지 크롤링 함수 (Playwright / aiohttp)                    #
 ################################################################################
-async def fetch_dynamic_html(url: str, actions: callable = None) -> str:
-    """레인보우 시스템 크롤링 함수"""
-    logging.info(f"🚀 Playwright로 페이지 로딩 시작: {url}")
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"])
-            page = await browser.new_page()
-            await page.route("**/*", lambda route: route.abort() if route.request.resource_type in ["image", "stylesheet", "font", "media"] else route.continue_())
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            if actions:
-                await actions(page)
-                await page.wait_for_selector("ul.program_list", timeout=15000)
-            content = await page.content()
-            await browser.close()
-            logging.info(f"✅ Playwright 로딩 성공: {url}")
-            return content
-    except Exception as e:
-        logging.error(f"❌ Playwright 크롤링 오류: {url}, {e}", exc_info=True)
-        return ""
 
 async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
     """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수"""
@@ -323,31 +299,6 @@ async def extract_content(url: str) -> tuple:
     except Exception as e:
         logging.error(f"❌ 본문 내용 추출 오류 {url}: {e}", exc_info=True)
         return ("내용 처리 중 오류가 발생했습니다.", [])
-        
-def _parse_rainbow_page(soup: BeautifulSoup) -> list:
-    # ... 기존 레인보우 파싱 코드 (변경 없음)
-    programs = []
-    for item in soup.select("ul.program_list > li"):
-        if item.find("span", class_="label", string="모집종료"): continue
-        title = item.select_one("strong.tit").get_text(strip=True)
-        department = item.select_one("div.department").get_text(strip=True)
-        category = (item.select_one("li.point").get_text(strip=True).replace("역량", "").strip() if item.select_one("li.point") else "")
-        rec_period, op_period = "", ""
-        for p_item in item.select("li.period"):
-            text = p_item.get_text(strip=True)
-            if text.startswith("신청"): rec_period = text.replace("신청", "").strip()
-            elif text.startswith("운영"): op_period = text.replace("운영", "").strip()
-        applicants, capacity = "정보 없음", "정보 없음"
-        if member_elem := item.select_one("li.member"):
-            if "/" in (member_text := member_elem.get_text(strip=True).replace("정원", "").replace("명", "")):
-                applicants, capacity = member_text.split('/')
-        link = ""
-        if onclick := item.get("onclick"):
-            if match := re.search(r"fn_detail\('(\d+)'\)", onclick):
-                link = f"{PROGRAM_BASE_URL}/main/CAP/C/C/A/view.do?prgSn={match.group(1)}"
-        programs.append({"title": title, "categories": [department, category], "recruitment_period": rec_period, "operation_period": op_period, "capacity": capacity.strip(), "applicants": applicants.strip(), "href": link})
-    programs.sort(key=lambda x: datetime.strptime(x["recruitment_period"].split('~')[0].strip(), "%Y.%m.%d") if '~' in x["recruitment_period"] else datetime.min, reverse=True)
-    return programs
 
 async def get_rainbow_programs(user_filters: dict = None) -> list:
     # ... 기존 get_programs 코드 (이름 변경)
@@ -427,20 +378,6 @@ async def send_notification(notice: tuple, target_chat_id: str):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
     await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard, parse_mode="HTML")
 
-async def send_rainbow_program_notification(program: dict, target_chat_id: str):
-    # ... 기존 send_program_notification (이름 변경)
-    title = html.escape(program.get("title", "제목 없음"))
-    categories = " &gt; ".join(map(html.escape, program.get("categories", [])))
-    rec_period = html.escape(program.get("recruitment_period", "정보 없음"))
-    op_period = html.escape(program.get("operation_period", "정보 없음"))
-    capacity_text = f"{program.get('applicants', '0')} / {program.get('capacity', '0')}명"
-    message_text = (f"<b>[레인보우] {title}</b>\n<i>{categories}</i>\n"
-                    "______________________________________________\n\n"
-                    f"📅 <b>신청 기간:</b> {rec_period}\n📅 <b>운영 기간:</b> {op_period}\n"
-                    f"👥 <b>신청 현황:</b> {capacity_text}\n")
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔎 자세히 보기", url=program.get("href", "#"))]])
-    await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard, parse_mode="HTML")
-
 # ▼ 추가: PKNU AI 프로그램 알림 전송 함수
 async def send_pknuai_program_notification(program: dict, target_chat_id: str):
     title = html.escape(program.get("title", "제목 없음"))
@@ -471,28 +408,11 @@ async def check_for_new_notices(target_chat_id: str):
         save_cache(seen)
         push_cache_changes()
 
-async def check_for_new_rainbow_programs(target_chat_id: str):
-    # ... 기존 check_for_new_programs (이름 변경)
-    logging.info("새로운 레인보우 비교과 프로그램을 확인합니다...")
-    seen = load_program_cache()
-    current = await get_rainbow_programs()
-    found = False
-    for program in current:
-        key = generate_cache_key(program["title"], program["href"])
-        if key not in seen:
-            logging.info(f"새 레인보우 프로그램 발견: {program['title']}")
-            await send_rainbow_program_notification(program, target_chat_id)
-            seen[key] = True
-            found = True
-    if found:
-        save_program_cache(seen)
-        push_program_cache_changes()
-
 # ▼ 추가: PKNU AI 프로그램 확인 함수
 async def check_for_new_pknuai_programs(target_chat_id: str):
     logging.info("새로운 AI 비교과 프로그램을 확인합니다...")
-    seen = load_pknuai_program_cache()
-    current = await get_pknuai_programs()
+    seen = load_program_cache()
+    current = await get_programs()
     found = False
     for program in current:
         # AI 비교과는 고유 ID 조합으로 키 생성
@@ -500,12 +420,12 @@ async def check_for_new_pknuai_programs(target_chat_id: str):
         key = generate_cache_key(program['title'], unique_id)
         if key not in seen:
             logging.info(f"새 AI 비교과 프로그램 발견: {program['title']}")
-            await send_pknuai_program_notification(program, target_chat_id)
+            await send_program_notification(program, target_chat_id)
             seen[key] = True
             found = True
     if found:
-        save_pknuai_program_cache(seen)
-        push_pknuai_program_cache_changes()
+        save_program_cache(seen)
+        push_program_cache_changes()
 
 ################################################################################
 #                             명령어 및 기본 콜백 핸들러                            #
@@ -516,7 +436,7 @@ async def start_command(message: types.Message):
     if str(message.chat.id) not in ALLOWED_USERS:
         await message.answer("이 봇은 등록된 사용자만 이용할 수 있습니다.\n등록하려면 `/register [등록코드]`를 입력해 주세요.")
         return
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="공지사항", callback_data="notice_menu"), InlineKeyboardButton(text="비교과 프로그램", callback_data="extracurricular_menu")]])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="공지사항", callback_data="notice_menu"), InlineKeyboardButton(text="비교과 프로그램", callback_data="compare_programs")] # 'extracurricular_menu' -> 'compare_programs'])
     await message.answer("안녕하세요! 부경대학교 알림 봇입니다.\n어떤 정보를 확인하시겠어요?", reply_markup=keyboard)
 
 @dp.message(Command("register"))
@@ -551,102 +471,73 @@ async def notice_menu_handler(callback: CallbackQuery):
 #                    ▼ 수정: 비교과 프로그램 메뉴 및 핸들러                          #
 ################################################################################
 @dp.callback_query(lambda c: c.data == "extracurricular_menu")
-async def extracurricular_menu_handler(callback: CallbackQuery):
-    """레인보우와 AI 비교과 시스템을 선택하는 메인 메뉴"""
-    await callback.answer()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌈 레인보우 비교과", callback_data="rainbow_menu")],
-        [InlineKeyboardButton(text="🤖 AI 비교과 (로그인 필요)", callback_data="pknuai_programs")]
-    ])
-    await callback.message.edit_text("확인하고 싶은 비교과 시스템을 선택하세요:", reply_markup=keyboard)
 
-@dp.callback_query(lambda c: c.data == "rainbow_menu")
-async def rainbow_menu_handler(callback: CallbackQuery):
-    """레인보우 비교과 프로그램의 세부 메뉴"""
-    await callback.answer()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎯 맞춤 프로그램 찾기", callback_data="rainbow_my_programs")],
-        [InlineKeyboardButton(text="⚙️ 필터 설정", callback_data="rainbow_set_filters")],
-        [InlineKeyboardButton(text="🔎 키워드로 검색", callback_data="rainbow_keyword_search")]
-    ])
-    await callback.message.edit_text("레인보우 비교과 프로그램 옵션을 선택하세요:", reply_markup=keyboard)
-    
-@dp.callback_query(lambda c: c.data == "rainbow_my_programs")
-async def rainbow_my_programs_handler(callback: CallbackQuery):
-    await callback.answer()
-    user_filter = ALLOWED_USERS.get(str(callback.message.chat.id), {}).get("filters", {})
-    if not any(user_filter.values()):
-        await callback.message.edit_text("설정된 필터가 없습니다. 우선, 현재 모집 중인 전체 프로그램을 보여드릴게요.")
-    else:
-        await callback.message.edit_text("필터에 맞는 프로그램을 검색 중입니다...")
-    programs = await get_rainbow_programs(user_filter)
-    if not programs:
-        await callback.message.edit_text("조건에 맞는 프로그램이 없습니다.")
-    else:
-        for program in programs: await send_rainbow_program_notification(program, callback.message.chat.id)
+def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    """AI 비교과 필터 메뉴 키보드를 생성합니다."""
+    user_filters = ALLOWED_USERS.get(str(chat_id), {}).get("filters", {})
+    buttons = []
+    # PROGRAM_FILTERS는 코드 상단에 정의된 필터 목록
+    for f in PROGRAM_FILTERS:
+        text = f"{'✅' if user_filters.get(f) else ''} {f}".strip()
+        buttons.append(InlineKeyboardButton(text=text, callback_data=f"toggle_program_{f}"))
 
-# ... (기존 rainbow 필터 관련 핸들러들은 이름만 rainbow_ 접두사 붙여서 유지)
-def get_rainbow_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
-    # ... 기존 get_program_filter_keyboard (이름 변경)
-    current_filters = ALLOWED_USERS.get(str(chat_id), {}).get("filters", {})
-    grades = ["1학년", "2학년", "3학년", "4학년"]
-    comp1 = ["도전", "소통", "인성"]; comp2 = ["창의", "협업", "전문"]
-    options = ["신청가능"]
-    def create_button(opt): return InlineKeyboardButton(text=f"{'✅' if current_filters.get(opt) else ''} {opt}".strip(), callback_data=f"toggle_rainbow_{opt}")
-    keyboard = [[create_button(g) for g in grades], [create_button(c) for c in comp1], [create_button(c) for c in comp2], [create_button(o) for o in options], [InlineKeyboardButton(text="💾 저장하고 돌아가기", callback_data="rainbow_filter_done")]]
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    rows = [buttons[i:i+3] for i in range(0, len(buttons), 3)]
+    rows.append([InlineKeyboardButton(text="✨ 필터로 검색하기 ✨", callback_data="my_programs")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
-@dp.callback_query(lambda c: c.data == "rainbow_set_filters")
-async def set_rainbow_filters_handler(callback: CallbackQuery):
-    await callback.answer(); await callback.message.edit_text("원하는 필터를 선택하세요:", reply_markup=get_rainbow_filter_keyboard(callback.message.chat.id))
+@dp.message(Command("filter"))
+async def filter_command(message: types.Message) -> None:
+    """/filter 명령어 핸들러"""
+    keyboard = get_program_filter_keyboard(message.chat.id)
+    await message.answer("🎯 AI 비교과 필터를 선택하세요:", reply_markup=keyboard)
 
-@dp.callback_query(lambda c: c.data.startswith("toggle_rainbow_"))
-async def toggle_rainbow_filter(callback: CallbackQuery):
+@dp.callback_query(lambda c: c.data.startswith("toggle_program_"))
+async def toggle_program_filter(callback: CallbackQuery):
+    """필터 버튼을 누를 때마다 상태를 변경하고 저장합니다."""
+    filter_name = callback.data.replace("toggle_program_", "")
     user_id_str = str(callback.message.chat.id)
-    option = callback.data.replace("toggle_rainbow_", "")
-    filters = ALLOWED_USERS.setdefault(user_id_str, {"filters": {}}).setdefault("filters", {})
-    filters[option] = not filters.get(option, False)
-    save_whitelist(ALLOWED_USERS)
-    await callback.message.edit_text("원하는 필터를 선택하세요:", reply_markup=get_rainbow_filter_keyboard(callback.message.chat.id))
+    user_data = ALLOWED_USERS.setdefault(user_id_str, {})
+    filters = user_data.setdefault("filters", {f: False for f in PROGRAM_FILTERS})
+    filters[filter_name] = not filters.get(filter_name, False)
 
-@dp.callback_query(lambda c: c.data == "rainbow_filter_done")
-async def filter_done_rainbow_handler(callback: CallbackQuery):
+    save_whitelist(ALLOWED_USERS) # 변경 즉시 저장
+    push_file_changes(WHITELIST_FILE, f"Update filters for user {user_id_str}")
+
+    await callback.answer(f"{filter_name} 필터 {'선택' if filters[filter_name] else '해제'}")
+    keyboard = get_program_filter_keyboard(callback.message.chat.id)
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+@dp.callback_query(lambda c: c.data == "my_programs")
+async def my_programs_handler(callback: CallbackQuery):
+    """설정된 필터에 맞는 AI 비교과 프로그램을 검색하여 보여줍니다."""
     await callback.answer()
-    push_file_changes(WHITELIST_FILE, "Update user filters")
-    user_filter = ALLOWED_USERS.get(str(callback.message.chat.id), {}).get("filters", {})
-    selected = [opt for opt, chosen in user_filter.items() if chosen]
-    await callback.message.edit_text(f"필터가 저장되었습니다.\n선택: {', '.join(selected) if selected else '없음'}")
-    await rainbow_menu_handler(callback)
+    user_id_str = str(callback.message.chat.id)
+    user_filters = ALLOWED_USERS.get(user_id_str, {}).get("filters", {})
 
-@dp.callback_query(lambda c: c.data == "rainbow_keyword_search")
-async def rainbow_keyword_search_handler(callback: CallbackQuery, state: FSMContext):
-    await callback.answer(); await callback.message.edit_text("🔎 레인보우 시스템에서 검색할 키워드를 입력해 주세요:"); await state.set_state(KeywordSearchState.waiting_for_keyword)
-
-@dp.message(KeywordSearchState.waiting_for_keyword)
-async def process_keyword_search(message: types.Message, state: FSMContext):
-    keyword = message.text.strip()
-    await state.clear()
-    await message.answer(f"🔍 '{keyword}' 키워드로 레인보우 프로그램을 검색합니다...")
-    programs = await get_rainbow_programs_by_keyword(keyword)
-    if not programs: await message.answer(f"❌ '{keyword}'에 해당하는 프로그램이 없습니다.")
-    else:
-        for program in programs: await send_rainbow_program_notification(program, message.chat.id)
-
-@dp.callback_query(lambda c: c.data == "pknuai_programs")
-async def pknuai_programs_handler(callback: CallbackQuery):
-    await callback.answer()
-    if not PKNU_USERNAME or not PKNU_PASSWORD:
-        await callback.message.edit_text("PKNU AI 비교과 정보를 보려면 봇 관리자가 먼저 로그인 정보를 설정해야 합니다.")
+    if not any(user_filters.values()):
+        # ... 필터가 설정되지 않았을 때의 처리 ...
         return
-    
-    await callback.message.edit_text("🤖 AI 비교과 프로그램을 불러오는 중입니다. 로그인이 필요하여 시간이 조금 걸릴 수 있습니다...")
-    programs = await get_pknuai_programs()
+
+    status_msg = await callback.message.edit_text("📊 필터로 검색 중... (로그인 필요)")
+    # get_programs 함수는 내부적으로 fetch_program_html을 호출함
+    programs = await get_programs(user_filters=user_filters) 
+    await status_msg.delete()
 
     if not programs:
-        await callback.message.edit_text("현재 모집 중인 AI 비교과 프로그램이 없거나, 정보를 불러오는 데 실패했습니다.")
+        await callback.message.answer("조건에 맞는 프로그램이 없습니다.")
     else:
         for program in programs:
             await send_pknuai_program_notification(program, callback.message.chat.id)
+
+@dp.callback_query(lambda c: c.data == "compare_programs")
+async def compare_programs_handler(callback: CallbackQuery):
+    """AI 비교과 프로그램의 메인 메뉴를 보여줍니다."""
+    await callback.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="나만의 프로그램 (필터)", callback_data="my_programs")],
+        [InlineKeyboardButton(text="키워드로 검색", callback_data="keyword_search")]
+    ])
+    await callback.message.edit_text("AI 비교과 프로그램입니다. 원하시는 기능을 선택하세요:", reply_markup=keyboard)
 
 ################################################################################
 #                            기타 상태 및 메시지 핸들러                            #
@@ -679,7 +570,6 @@ async def scheduled_tasks():
         try:
             logging.info("스케줄링된 작업을 시작합니다.")
             await check_for_new_notices(GROUP_CHAT_ID)
-            await check_for_new_rainbow_programs(GROUP_CHAT_ID)
             await check_for_new_pknuai_programs(GROUP_CHAT_ID)
             logging.info("스케줄링된 작업이 완료되었습니다.")
         except Exception as e:
@@ -690,7 +580,6 @@ async def main() -> None:
     logging.info("봇을 시작합니다. 초기 데이터 확인 중...")
     try:
         await check_for_new_notices(GROUP_CHAT_ID)
-        await check_for_new_rainbow_programs(GROUP_CHAT_ID)
         await check_for_new_pknuai_programs(GROUP_CHAT_ID)
     except Exception as e:
         logging.error(f"초기 데이터 확인 중 오류 발생: {e}", exc_info=True)
