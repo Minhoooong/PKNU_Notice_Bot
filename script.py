@@ -299,24 +299,24 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
         
         logging.info(f"3. 비교과 페이지 진입 완료: {page.url} / 제목: {await page.title()}")
 
-            # 7) 필터 적용
-            if filters and any(filters.values()):
-                logging.info(f"필터를 적용합니다: {filters}")
-                for filter_name, is_selected in filters.items():
-                    if is_selected:
-                        input_id = PROGRAM_FILTER_MAP.get(filter_name)
-                        if input_id:
-                            await page.click(f"label[for='{input_id}']")
-                await page.wait_for_timeout(500)  # 약간의 렌더 지연 여유
+        # 7) 필터 적용
+        if filters and any(filters.values()):
+            logging.info(f"필터를 적용합니다: {filters}")
+            for filter_name, is_selected in filters.items():
+                if is_selected:
+                    input_id = PROGRAM_FILTER_MAP.get(filter_name)
+                    if input_id:
+                        await page.click(f"label[for='{input_id}']")
+            await page.wait_for_timeout(500)  # 약간의 렌더 지연 여유
 
-            # 8) 키워드 검색
-            if keyword:
-                logging.info(f"키워드 '{keyword}'로 검색합니다.")
-                await page.fill("input#searchVal", keyword)
-                await page.click("button.btn.btn-outline-primary.btn_search")
+        # 8) 키워드 검색
+        if keyword:
+            logging.info(f"키워드 '{keyword}'로 검색합니다.")
+            await page.fill("input#searchVal", keyword)
+            await page.click("button.btn.btn-outline-primary.btn_search")
 
-            if keyword or (filters and any(filters.values())):
-                await page.wait_for_load_state("networkidle", timeout=30000)
+        if keyword or (filters and any(filters.values())):
+            await page.wait_for_load_state("networkidle", timeout=30000)
 
             content = await page.content()
             await browser.close()
