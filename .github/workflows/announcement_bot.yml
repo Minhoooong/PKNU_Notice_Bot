@@ -39,6 +39,17 @@ jobs:
           echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
           git-crypt unlock keyfile
 
+      - name: Unlock git-crypt
+        env:
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          export GIT_CRYPT_ALLOW_UNSAFE_REPOSITORY=1
+          echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
+          git-crypt unlock keyfile
+
+      - name: Synchronize with remote repository
+        run: git pull origin main
+
       - name: Run announcement bot script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
