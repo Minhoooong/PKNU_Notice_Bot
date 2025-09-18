@@ -162,7 +162,7 @@ load_cache = lambda: load_json_file(CACHE_FILE)
 save_cache = lambda data: save_json_file(data, CACHE_FILE)
 push_cache_changes = lambda: push_file_changes(CACHE_FILE, "Update announcements_seen.json")
 
-load_program_cache = lambda: load_json_file(PROGRAM_CACHE_FILE)
+load_program_cache = lambda: load_json_file(PKNUAI_PROGRAM_CACHE_FILE)
 save_program_cache = lambda data: save_json_file(data, PROGRAM_CACHE_FILE)
 push_program_cache_changes = lambda: push_file_changes(PROGRAM_CACHE_FILE, "Update programs_seen.json")
 
@@ -300,33 +300,6 @@ async def extract_content(url: str) -> tuple:
         logging.error(f"❌ 본문 내용 추출 오류 {url}: {e}", exc_info=True)
         return ("내용 처리 중 오류가 발생했습니다.", [])
 
-async def get_rainbow_programs(user_filters: dict = None) -> list:
-    # ... 기존 get_programs 코드 (이름 변경)
-    actions = None
-    if user_filters and any(user_filters.values()):
-        async def filter_actions(page):
-            logging.info(f"레인보우 필터 적용: {user_filters}")
-            grade_map = {"1학년": "1", "2학년": "2", "3학년": "3", "4학년": "4"}
-            for grade, value in grade_map.items():
-                if user_filters.get(grade): await page.click(f"label[for='searchGrade{value}']")
-            comp_map = {"도전": "1", "소통": "2", "인성": "3", "창의": "4", "협업": "5", "전문": "6"}
-            for comp, value in comp_map.items():
-                if user_filters.get(comp): await page.click(f"label[for='searchIaq{value}']")
-            if user_filters.get("신청가능"): await page.click("label[for='searchApply']")
-            await page.click("div.search_box > button.btn_search")
-        actions = filter_actions
-    html_content = await fetch_dynamic_html(PROGRAM_URL, actions=actions)
-    return _parse_rainbow_page(BeautifulSoup(html_content, 'html.parser')) if html_content else []
-
-async def get_rainbow_programs_by_keyword(keyword: str) -> list:
-    # ... 기존 get_programs_by_keyword 코드 (이름 변경)
-    async def search_actions(page):
-        logging.info(f"레인보우 키워드 검색: {keyword}")
-        await page.fill("input#searchPrgNm", keyword)
-        await page.click("div.search_box > button.btn_search")
-    html_content = await fetch_dynamic_html(PROGRAM_URL, actions=search_actions)
-    return _parse_rainbow_page(BeautifulSoup(html_content, 'html.parser')) if html_content else []
-    
 # ▼ 추가: PKNU AI 비교과 파싱 함수
 def _parse_pknuai_page(soup: BeautifulSoup) -> list:
     """PKNU AI 시스템의 HTML을 파싱하여 프로그램 목록 반환"""
