@@ -176,50 +176,82 @@ push_pknuai_program_cache_changes = lambda: push_file_changes(PKNUAI_PROGRAM_CAC
 ################################################################################
 
 async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
-    """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수 (iframe 최종 로직)**"""
+    """PKNU AI 비교과 페이지를 로그인, 검색, 필터링하여 HTML을 가져오는 함수 (iframe 가정 제거, 폼 직접 처리)"""
     if not PKNU_USERNAME or not PKNU_PASSWORD:
         logging.error("❌ PKNU_USERNAME 또는 PKNU_PASSWORD 환경 변수가 설정되지 않았습니다.")
         return ""
 
     page = None
     logging.info(f"🚀 Playwright 작업 시작 (검색어: {keyword}, 필터: {filters})")
+
     try:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True, args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"])
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
+            )
             page = await browser.new_page()
 
-            # 1. 부경대학교 포털 로그인 페이지로 직접 이동
+            # 1) 포털 접속
             portal_login_url = "https://portal.pknu.ac.kr/"
-            await page.goto(portal_login_url, wait_until="networkidle", timeout=30000)
+            await page.goto(portal_login_url, wait_until="domcontentloaded", timeout=60000)
             logging.info(f"1. 포털 로그인 페이지 접속: {page.url}")
 
-            # ▼▼▼▼▼ 핵심 수정 부분: iframe을 정확하게 찾아서 작업 ▼▼▼▼▼
-            # 2. 페이지 안의 첫 번째 iframe을 찾습니다. 포털의 로그인 폼은 보통 첫 번째 iframe에 있습니다.
-            #    frame_locator는 해당 프레임이 나타날 때까지 기다려주는 기능이 포함되어 있습니다.
-            login_frame = page.frame_locator("iframe").first
-            logging.info("2. 로그인 폼(iframe)을 찾았습니다. 로그인을 시도합니다.")
+            # 2) 로그인 폼이 페이지에 '직접' 있는지 먼저 확인 (iframe 전제 제거)
+            async def _find_login_scope():
+                # 페이지 직하 폼
+                try:
+                    await page.wait_for_selector("form#LoginForm", state="attached", timeout=4000)
+                    return page  # scope = page
+                except Exception:
+                    pass
+                # 혹시나 프레임 안으로 들어갈 수도 있으니 보수적으로 탐색
+                try:
+                    await page.wait_for_selector("iframe", state="attached", timeout=4000)
+                    for fr in page.frames:
+                        try:
+                            await fr.wait_for_selector("form#LoginForm", state="attached", timeout=1500)
+                            return fr  # scope = 해당 frame
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+                raise TimeoutError("로그인 폼(form#LoginForm)을 찾지 못했습니다.")
 
-            # 3. iframe 내부의 ID와 비밀번호 입력창에 정보를 입력합니다.
-            await login_frame.locator("input#userId").fill(PKNU_USERNAME)
-            await login_frame.locator("input#userpw").fill(PKNU_PASSWORD)
-            await page.screenshot(path="debug_portal_login.png")
-            
-            # 4. iframe 내부의 로그인 버튼을 클릭합니다.
-            await login_frame.locator('button[type="submit"]').click()
-            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-            
-            await page.wait_for_load_state("networkidle", timeout=30000)
-            logging.info("3. 포털 로그인 성공. 현재 페이지: " + await page.title())
-            await page.screenshot(path="debug_portal_main.png")
+            scope = await _find_login_scope()
+            logging.info("2. 로그인 폼을 찾았습니다. 로그인을 시도합니다.")
 
-            # 4. 로그인이 완료된 세션을 가지고 비교과 프로그램 페이지로 이동
+            # 3) ID/PW 필드 대기 및 입력 (이 페이지의 실제 필드명에 맞춤)
+            await scope.wait_for_selector("form#LoginForm input#userId, form#LoginForm input[name='userId']",
+                                          state="visible", timeout=20000)
+            await scope.wait_for_selector("form#LoginForm input#userpw, form#LoginForm input[name='password']",
+                                          state="visible", timeout=20000)
+
+            await scope.fill("form#LoginForm input#userId, form#LoginForm input[name='userId']", PKNU_USERNAME)
+            await scope.fill("form#LoginForm input#userpw, form#LoginForm input[name='password']", PKNU_PASSWORD)
+
+            # 4) 제출 버튼 클릭 (폼 onsubmit=false이므로 버튼 클릭으로 mSABER_Ajax('idpwd') 실행)
+            await scope.locator("form#LoginForm button[type='submit']").click()
+
+            # 5) 로그인 후 네트워크 안정화
+            await page.wait_for_load_state("networkidle", timeout=60000)
+            logging.info("3. 포털 로그인 후 상태 안정화 완료")
+            try:
+                await page.screenshot(path="debug_portal_after_login.png", full_page=True)
+            except Exception:
+                pass
+
+            # 6) 비교과 프로그램 페이지로 이동
             logging.info("4. 비교과 프로그램 페이지로 이동합니다.")
-            await page.goto(PKNUAI_PROGRAM_URL, wait_until="networkidle", timeout=30000)
+            await page.goto(PKNUAI_PROGRAM_URL, wait_until="domcontentloaded", timeout=60000)
             logging.info(f"5. 비교과 페이지 접속 완료: {page.url}")
             logging.info(f"6. 최종 페이지 제목: {await page.title()}")
-            await page.screenshot(path="debug_final_program_page.png")
-            
-            # 이하 필터링 및 검색 로직은 이전 답변과 동일하게 유지
+            try:
+                await page.screenshot(path="debug_final_program_page.png", full_page=True)
+            except Exception:
+                pass
+
+            # 7) 필터 적용
             if filters and any(filters.values()):
                 logging.info(f"필터를 적용합니다: {filters}")
                 for filter_name, is_selected in filters.items():
@@ -227,15 +259,16 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                         input_id = PROGRAM_FILTER_MAP.get(filter_name)
                         if input_id:
                             await page.click(f"label[for='{input_id}']")
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(500)  # 약간의 렌더 지연 여유
 
+            # 8) 키워드 검색
             if keyword:
                 logging.info(f"키워드 '{keyword}'로 검색합니다.")
                 await page.fill("input#searchVal", keyword)
                 await page.click("button.btn.btn-outline-primary.btn_search")
-            
+
             if keyword or (filters and any(filters.values())):
-                 await page.wait_for_load_state("networkidle", timeout=20000)
+                await page.wait_for_load_state("networkidle", timeout=30000)
 
             content = await page.content()
             await browser.close()
@@ -244,11 +277,21 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
 
     except Exception as e:
         logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
-        if page and not page.is_closed():
-            await page.screenshot(path="debug_error_screenshot.png")
-            with open("debug_error_page.html", "w", encoding="utf-8") as f:
-                f.write(await page.content())
-            logging.error("오류 당시의 화면을 debug_error_screenshot.png 와 debug_error_page.html 로 저장했습니다.")
+        # Page가 살아있을 때만 진단 산출물 저장
+        try:
+            if page and not page.is_closed():
+                try:
+                    await page.screenshot(path="debug_error_screenshot.png", full_page=True)
+                except Exception:
+                    pass
+                try:
+                    with open("debug_error_page.html", "w", encoding="utf-8") as f:
+                        f.write(await page.content())
+                except Exception:
+                    pass
+                logging.error("오류 당시 화면을 debug_error_screenshot.png / debug_error_page.html 로 저장했습니다.")
+        except Exception:
+            pass
         return ""
 
 async def fetch_url(url: str) -> str:
