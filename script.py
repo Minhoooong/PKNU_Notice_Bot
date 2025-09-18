@@ -436,7 +436,7 @@ async def start_command(message: types.Message):
     if str(message.chat.id) not in ALLOWED_USERS:
         await message.answer("이 봇은 등록된 사용자만 이용할 수 있습니다.\n등록하려면 `/register [등록코드]`를 입력해 주세요.")
         return
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="공지사항", callback_data="notice_menu"), InlineKeyboardButton(text="비교과 프로그램", callback_data="compare_programs")] # 'extracurricular_menu' -> 'compare_programs'])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="공지사항", callback_data="notice_menu"), InlineKeyboardButton(text="비교과 프로그램", callback_data="compare_programs")] # 'extracurricular_menu' -> 'compare_programs']])
     await message.answer("안녕하세요! 부경대학교 알림 봇입니다.\n어떤 정보를 확인하시겠어요?", reply_markup=keyboard)
 
 @dp.message(Command("register"))
