@@ -45,7 +45,7 @@ CACHE_FILE = "announcements_seen.json"
 WHITELIST_FILE = "whitelist.json"
 
 # ▼ 추가: PKNU AI 비교과 시스템
-PKNUAI_PROGRAM_URL = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
+PKNUAI_PROGRAM_URL = "https://pknuai.pknu.ac.kr/web/login/pknuLoginProc.do?mId=3&userId=202211223&returnUrl=https%3A%2F%2Fpknuai.pknu.ac.kr%2Fsso%2Findex.jsp"
 PKNUAI_BASE_URL = "https://pknuai.pknu.ac.kr"
 PKNUAI_PROGRAM_CACHE_FILE = "programs_seen.json"
 
@@ -199,7 +199,7 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             await page.screenshot(path="debug_portal_login.png")
             
             # 로그인 버튼 클릭 후, 페이지가 완전히 로드될 때까지 기다림
-            await page.click("button.btn_login")
+            await page.click('button[type="submit"]')
             await page.wait_for_load_state("networkidle", timeout=30000)
             logging.info("2. 포털 로그인 성공. 현재 페이지: " + await page.title())
             await page.screenshot(path="debug_portal_main.png")
