@@ -333,7 +333,7 @@ def _parse_pknuai_page(soup: BeautifulSoup) -> list:
 
 async def get_pknuai_programs() -> list:
     """PKNU AI 비교과 프로그램 목록을 가져옵니다 (로그인 포함)."""
-    html_content = await fetch_pknuai_html()
+    html_content = await fetch_program_html()
     if not html_content:
         return []
     soup = BeautifulSoup(html_content, 'html.parser')
