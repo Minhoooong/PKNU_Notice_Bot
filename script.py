@@ -180,13 +180,13 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
     if not PKNU_USERNAME or not PKNU_PASSWORD:
         logging.error("❌ PKNU_USERNAME 또는 PKNU_PASSWORD 환경 변수가 설정되지 않았습니다.")
         return ""
-
+    
     logging.info(f"🚀 Playwright 작업 시작 (검색어: {keyword}, 필터: {filters})")
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"])
             page = await browser.new_page()
-
+            
             await page.goto(PKNUAI_PROGRAM_URL, wait_until="domcontentloaded", timeout=30000)
 
             if "sso.pknu.ac.kr" in page.url:
@@ -195,30 +195,38 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                 await page.fill("input#userId", PKNU_USERNAME)
                 await page.fill("input#userpw", PKNU_PASSWORD)
                 await page.click('button[type="submit"]')
-
-            # ▼▼▼▼▼ 핵심 수정 부분 ▼▼▼▼▼
-            # 특정 요소 대신, 페이지가 완전히 로드되기를 기다립니다. (네트워크 활동이 잠잠해질 때까지)
+            
             logging.info("로그인 후 페이지 로딩을 기다립니다...")
             await page.wait_for_load_state("networkidle", timeout=30000) 
             logging.info("페이지 로딩 완료. 콘텐츠를 가져옵니다.")
-            # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
-            # (이후 필터 및 검색 로직은 동일)
             if keyword:
-                # ... (이하 생략)
+                logging.info(f"키워드 '{keyword}'로 검색합니다.")
+                await page.fill("#searchKeyword", keyword)
+                await page.press("#searchKeyword", "Enter")
+                await page.wait_for_load_state("networkidle", timeout=15000)
+
+            if filters:
+                logging.info(f"필터를 적용합니다: {filters}")
+                for filter_name, is_selected in filters.items():
+                    if is_selected:
+                        input_id = PROGRAM_FILTER_MAP.get(filter_name)
+                        if input_id: await page.click(f"label[for='{input_id}']")
+                await page.wait_for_timeout(2000)
 
             content = await page.content()
             await browser.close()
             logging.info("✅ Playwright 크롤링 성공")
             return content
-
+            
     except Exception as e:
         logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
-        # ▼▼▼ 오류 발생 시 현재 페이지의 HTML을 로그로 남겨 디버깅에 활용 ▼▼▼
         if 'page' in locals():
-            page_content_on_error = await page.content()
-            logging.error(f"오류 발생 당시 페이지 내용:\n{page_content_on_error[:1000]}") # 1000자만 출력
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+            try:
+                page_content_on_error = await page.content()
+                logging.error(f"오류 발생 당시 페이지 내용:\n{page_content_on_error[:1000]}")
+            except Exception as page_error:
+                logging.error(f"오류 페이지 콘텐츠를 가져오는 중 추가 오류 발생: {page_error}")
         return ""
 
 async def fetch_url(url: str) -> str:
