@@ -1,5 +1,5 @@
 # playwright 공식 이미지를 기반으로 시작합니다.
-FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.55.0-jammy
 
 # 작업 디렉토리를 설정합니다.
 WORKDIR /app
