@@ -11,6 +11,8 @@ import subprocess
 import sys
 import re
 import urllib.parse
+import easyocr
+import io
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 
@@ -49,6 +51,14 @@ WHITELIST_FILE = "whitelist.json"
 PKNUAI_BASE_URL = "https://pknuai.pknu.ac.kr"
 PKNUAI_PROGRAM_CACHE_FILE = "programs_seen.json"
 PKNUAI_LIST = "https://pknuai.pknu.ac.kr/web/nonSbjt/programList.do?mId=216"
+
+logging.info("EasyOCR 리더를 로딩합니다... (최초 실행 시 시간이 걸릴 수 있습니다)")
+try:
+    ocr_reader = easyocr.Reader(["ko", "en"], gpu=False)
+    logging.info("✅ EasyOCR 로딩 완료!")
+except Exception as e:
+    logging.error(f"❌ EasyOCR 로딩 실패: {e}", exc_info=True)
+    ocr_reader = None  # 로딩 실패 시 ocr_reader를 None으로 설정
 
 def build_pknuai_sso_bridge(user_id: str, return_url: str = PKNUAI_LIST) -> str:
     """
@@ -448,17 +458,74 @@ async def summarize_text(text: str) -> str:
         logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
         return "요약 중 오류가 발생했습니다."
 
+async def ocr_image_from_url(session: aiohttp.ClientSession, url: str) -> str:
+    """URL에서 이미지를 비동기적으로 받아 OCR을 수행하고 텍스트를 반환합니다."""
+    if not ocr_reader:
+        logging.warning("OCR 리더가 초기화되지 않아 이미지 처리를 건너뜁니다.")
+        return ""
+    try:
+        async with session.get(url) as response:
+            if response.status != 200:
+                logging.error(f"이미지 다운로드 실패: {url}, 상태 코드: {response.status}")
+                return ""
+            image_bytes = await response.read()
+
+            # EasyOCR의 readtext는 동기 함수이므로 asyncio.to_thread로 실행하여 이벤트 루프 블로킹 방지
+            result = await asyncio.to_thread(
+                ocr_reader.readtext, image_bytes, detail=0
+            )
+
+            logging.info(f"이미지 OCR 완료: {url}")
+            return " ".join(result)
+    except Exception as e:
+        logging.error(f"이미지 OCR 처리 중 오류 발생 {url}: {e}", exc_info=True)
+        return ""
+
 async def extract_content(url: str) -> tuple:
-    # ... 기존 본문 추출 코드 (변경 없음)
+    """
+    웹페이지 본문을 추출하고, 텍스트가 부족하면 이미지에서 OCR을 수행하여 요약합니다.
+    """
     try:
         html_content = await fetch_url(url)
-        if not html_content: return ("페이지 내용을 불러올 수 없습니다.", [])
-        soup = BeautifulSoup(html_content, 'html.parser')
+        if not html_content:
+            return ("페이지 내용을 불러올 수 없습니다.", [])
+
+        soup = BeautifulSoup(html_content, "html.parser")
         container = soup.find("div", class_="bdvTxt_wrap") or soup
-        raw_text = ' '.join(container.get_text(separator=' ', strip=True).split())
-        summary_text = await summarize_text(raw_text)
-        images = [urllib.parse.urljoin(url, img['src']) for img in container.find_all('img') if img.get('src')]
+
+        # 1. 원본 텍스트 추출
+        raw_text = " ".join(container.get_text(separator=" ", strip=True).split())
+        # 2. 이미지 URL 목록 추출
+        images = [
+            urllib.parse.urljoin(url, img["src"])
+            for img in container.find_all("img")
+            if img.get("src")
+        ]
+
+        summary_text = ""
+        # 3. 텍스트가 100자 미만으로 매우 적고 이미지가 있을 경우에만 OCR 수행
+        if (not raw_text or len(raw_text) < 100) and images:
+            logging.info(f"텍스트가 부족하여 이미지 OCR을 시도합니다: {url}")
+            # aiohttp 세션을 한 번 생성하여 모든 이미지 다운로드에 재사용
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as session:
+                tasks = [ocr_image_from_url(session, img_url) for img_url in images]
+                ocr_texts = await asyncio.gather(*tasks)
+
+            full_ocr_text = "\n".join(filter(None, ocr_texts))
+
+            if full_ocr_text.strip():
+                # OCR로 추출된 텍스트를 요약
+                summary_text = await summarize_text(full_ocr_text)
+            else:
+                summary_text = "이미지가 있으나 텍스트를 추출할 수 없었습니다."
+        else:
+            # 텍스트가 충분하면 기존 방식대로 텍스트 요약
+            summary_text = await summarize_text(raw_text)
+
         return (summary_text, images)
+
     except Exception as e:
         logging.error(f"❌ 본문 내용 추출 오류 {url}: {e}", exc_info=True)
         return ("내용 처리 중 오류가 발생했습니다.", [])
