@@ -515,13 +515,27 @@ async def get_pknuai_programs() -> list:
 #                                알림 전송 및 확인 함수                            #
 ################################################################################
 async def send_notification(notice: tuple, target_chat_id: str):
-    # ... 기존 공지사항 전송 함수 (변경 없음)
+    # ▼ 수정: 공지사항 전송 함수 - 이미지도 함께 전송
     title, href, department, date_ = notice
-    summary, _ = await extract_content(href)
-    message_text = (f"<b>[부경대 {html.escape(department)} 공지]</b>\n{html.escape(title)}\n\n"
-                    f"<i>{html.escape(date_)}</i>\n______________________________________________\n{summary}")
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]])
-    await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard, parse_mode="HTML")
+    summary, images = await extract_content(href)  # 이미지 리스트도 함께 받음
+    message_text = (
+        f"<b>[부경대 {html.escape(department)} 공지]</b>\n{html.escape(title)}\n\n"
+        f"<i>{html.escape(date_)}</i>\n______________________________________________\n{summary}"
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
+    )
+    await bot.send_message(chat_id=target_chat_id, text=message_text,
+                           reply_markup=keyboard, parse_mode="HTML")
+    # 이미지가 있으면 추가로 전송
+    if images:
+        if len(images) > 1:
+            # 여러 이미지일 경우 앨범으로 전송
+            media = [InputMediaPhoto(media=url) for url in images]
+            await bot.send_media_group(chat_id=target_chat_id, media=media)
+        else:
+            # 이미지 1장만 있을 경우 단일 사진 전송
+            await bot.send_photo(chat_id=target_chat_id, photo=images[0])
 
 # ▼ 추가: PKNU AI 프로그램 알림 전송 함수
 async def send_pknuai_program_notification(program: dict, target_chat_id: str):
