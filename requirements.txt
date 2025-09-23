@@ -48,3 +48,4 @@ XlsxWriter==3.2.2
 easyocr
 playwright
 aiohttp
+aiogram
