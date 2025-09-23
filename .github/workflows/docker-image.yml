@@ -16,6 +16,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ▼▼▼▼▼ 1. pip 캐시를 위한 경로 설정 ▼▼▼▼▼
+      - name: Setup pip cache
+        id: pip-cache
+        run: |
+          echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
+
+      # ▼▼▼▼▼ 2. requirements.txt를 기반으로 캐시 복원/저장 ▼▼▼▼▼
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pip-cache.outputs.dir }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Compute lowercase repo
         id: repo
         shell: bash
@@ -52,7 +67,7 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # 필요 시: 멀티플랫폼/캐시
           platforms: linux/amd64
+          # ▼▼▼▼▼ 3. 도커 빌드 시 pip 캐시를 마운트 ▼▼▼▼▼
           cache-from: type=gha
           cache-to: type=gha,mode=max
