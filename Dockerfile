@@ -18,7 +18,7 @@ WORKDIR /app
 # 의존성 파일 복사 및 설치
 COPY requirements.txt /app/
 RUN pip3 install --no-cache-dir -r requirements.txt
-RUN playwright install --with-deps chromium
+RUN python3 -m playwright install --with-deps chromium
 
 # 전체 프로젝트 코드 복사
 COPY . /app
