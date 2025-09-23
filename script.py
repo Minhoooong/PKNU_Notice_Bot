@@ -22,7 +22,7 @@ from aiogram.client.bot import DefaultBotProperties
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
