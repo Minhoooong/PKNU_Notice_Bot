@@ -50,6 +50,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # 필요 시: 멀티플랫폼/캐시
-          # platforms: linux/amd64
-          # cache-from: type=gha
-          # cache-to: type=gha,mode=max
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
