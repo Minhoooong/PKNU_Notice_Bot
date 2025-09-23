@@ -2,39 +2,54 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
-  build_and_push:
+  build-and-push:
     runs-on: ubuntu-latest
-    # GITHUB_TOKEN에 패키지를 쓸 수 있는 권한을 부여합니다.
     permissions:
       contents: read
-      packages: write
-
+      packages: write   # GHCR 푸시 권한
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set repo to lowercase
-        id: string
+      - name: Compute lowercase repo
+        id: repo
         shell: bash
-        run: echo "repository_lowercase=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+        run: |
+          echo "repository_lowercase=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to the Container registry
+      - name: Log in to GHCR (only on push)
+        if: ${{ github.event_name == 'push' }}
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push the Docker image
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.repo.outputs.repository_lowercase }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.event_name == 'push' }}
+            type=sha,prefix=,suffix=,format=long,enable=${{ github.event_name == 'push' }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build (PR는 빌드만 / push는 빌드+푸시)
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
-          tags: |
-            ghcr.io/${{ steps.string.outputs.repository_lowercase }}:latest
-            ghcr.io/${{ steps.string.outputs.repository_lowercase }}:${{ github.sha }}
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # 필요 시: 멀티플랫폼/캐시
+          # platforms: linux/amd64
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
