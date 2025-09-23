@@ -47,4 +47,4 @@ wsproto==1.2.0
 XlsxWriter==3.2.2
 easyocr
 playwright
-
+aiohttp
