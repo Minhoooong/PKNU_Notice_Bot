@@ -49,3 +49,4 @@ easyocr
 playwright
 aiohttp
 aiogram
+openai
