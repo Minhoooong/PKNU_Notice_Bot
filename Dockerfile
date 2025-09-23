@@ -11,9 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 파이썬 패키지를 시스템 영역이 아닌 별도 경로에 설치합니다.
+# 파이썬 패키지를 시스템 영역에 설치합니다. (기존: --user)
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+# ▼▼▼▼▼ 이 부분에서 --user 플래그를 제거했습니다 ▼▼▼▼▼
+RUN pip install --no-cache-dir -r requirements.txt
 
 
 # ================= STAGE 2: 최종 이미지 생성 =================
@@ -22,21 +23,19 @@ FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
 
 WORKDIR /app
 
-# 시스템 패키지 설치 (git-crypt는 최종 이미지에 필요할 수 있습니다)
+# 시스템 패키지 설치
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     git-crypt \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# builder 스테이지에서 설치했던 파이썬 패키지들만 복사해옵니다.
-COPY --from=builder /root/.local /root/.local
-
-# PATH 환경 변수에 패키지 경로를 추가해줍니다.
-ENV PATH=/root/.local/bin:$PATH
+# builder 스테이지에서 설치했던 파이썬 패키지들을 복사해옵니다.
+# ▼▼▼▼▼ 패키지 경로도 시스템 경로로 변경되었습니다 ▼▼▼▼▼
+COPY --from=builder /usr/local/lib/ /usr/local/lib/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
 # 소스 코드 복사
 COPY . .
-
 # 컨테이너 시작 시 봇 스크립트를 실행합니다.
 CMD ["python3", "script.py"]
