@@ -22,7 +22,7 @@ from aiogram.client.bot import DefaultBotProperties
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from bs4 import BeautifulSoup
 from openai import AsyncOpenAI
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
@@ -471,9 +471,11 @@ async def get_pknuai_programs() -> list:
 #                                알림 전송 및 확인 함수                            #
 ################################################################################
 async def send_notification(notice: tuple, target_chat_id: str):
-    # ▼ 수정: 공지사항 전송 함수 - 이미지도 함께 전송
+    """
+    공지사항 알림을 전송하는 함수 (이미지 직접 다운로드 방식으로 수정)
+    """
     title, href, department, date_ = notice
-    summary, images = await extract_content(href)  # 이미지 리스트도 함께 받음
+    summary, images = await extract_content(href)
     message_text = (
         f"<b>[부경대 {html.escape(department)} 공지]</b>\n{html.escape(title)}\n\n"
         f"<i>{html.escape(date_)}</i>\n______________________________________________\n{summary}"
@@ -481,17 +483,42 @@ async def send_notification(notice: tuple, target_chat_id: str):
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
     )
+    # 텍스트 메시지를 먼저 보냅니다.
     await bot.send_message(chat_id=target_chat_id, text=message_text,
                            reply_markup=keyboard, parse_mode="HTML")
-    # 이미지가 있으면 추가로 전송
+
+    # 이미지가 있는 경우에만 아래 로직을 실행합니다.
     if images:
-        if len(images) > 1:
-            # 여러 이미지일 경우 앨범으로 전송
-            media = [InputMediaPhoto(media=url) for url in images]
-            await bot.send_media_group(chat_id=target_chat_id, media=media)
-        else:
-            # 이미지 1장만 있을 경우 단일 사진 전송
-            await bot.send_photo(chat_id=target_chat_id, photo=images[0])
+        try:
+            # aiohttp 세션을 사용하여 이미지 파일들을 비동기적으로 다운로드합니다.
+            async with aiohttp.ClientSession() as session:
+                tasks = []
+                for url in images:
+                    tasks.append(asyncio.create_task(session.get(url)))
+
+                responses = await asyncio.gather(*tasks)
+                
+                media_files = []
+                for resp in responses:
+                    if resp.status == 200:
+                        # 이미지 데이터를 메모리에 바이트 형태로 저장합니다.
+                        image_bytes = await resp.read()
+                        # BufferedInputFile을 사용하여 파일 이름 없이 메모리 내 데이터를 직접 전달합니다.
+                        media_files.append(BufferedInputFile(image_bytes, filename="photo.jpg"))
+
+            if not media_files:
+                return # 다운로드한 이미지가 없으면 함수를 종료합니다.
+
+            if len(media_files) > 1:
+                # 여러 이미지일 경우 앨범으로 전송합니다.
+                media_group = [InputMediaPhoto(media=data) for data in media_files]
+                await bot.send_media_group(chat_id=target_chat_id, media=media_group)
+            else:
+                # 이미지 1장만 있을 경우 단일 사진으로 전송합니다.
+                await bot.send_photo(chat_id=target_chat_id, photo=media_files[0])
+
+        except Exception as e:
+            logging.error(f"이미지 전송 중 오류 발생: {e}", exc_info=True)
 
 # ▼ 추가: PKNU AI 프로그램 알림 전송 함수
 async def send_pknuai_program_notification(program: dict, target_chat_id: str):
