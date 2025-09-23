@@ -9,6 +9,11 @@ on:
 jobs:
   build_and_push:
     runs-on: ubuntu-latest
+    # GITHUB_TOKEN에 패키지를 쓸 수 있는 권한을 부여합니다.
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
