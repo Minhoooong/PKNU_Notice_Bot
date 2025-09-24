@@ -183,44 +183,39 @@ push_pknuai_program_cache_changes = lambda: push_file_changes(PKNUAI_PROGRAM_CAC
 #                         웹페이지 크롤링 함수 (Playwright / aiohttp)                    #
 ################################################################################
 
-async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
+async def fetch_program_html(url: str, keyword: str = None, filters: dict = None) -> str:
     """
-    PKNU AI 비교과 페이지 HTML 수집 (URL 직접 구성 방식, 안정성 강화):
-      1) 학번이 포함된 URL로 직접 접속하여 로그인 세션을 생성.
-      2) 키워드나 필터가 있으면, 이를 포함한 최종 URL을 직접 구성.
-      3) 구성된 URL로 바로 이동하여 HTML을 한 번에 가져옴.
-      4) 브라우저 리소스를 안정적으로 관리 및 종료.
+    Playwright를 사용하여 로그인 세션을 유지하며 지정된 URL의 HTML을 가져오는 범용 함수.
     """
     if not PKNU_USERNAME:
         logging.error("❌ PKNU_USERNAME 환경 변수가 설정되지 않았습니다.")
         return ""
 
-    logging.info(f"🚀 Playwright 작업 시작 (검색어: {keyword}, 필터: {filters})")
-
+    logging.info(f"🚀 Playwright 작업 시작 (URL: {url})")
+    
     async with async_playwright() as p:
         browser = None
+        page = None
         try:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
-            )
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
             context = await browser.new_context(
-                user_agent=("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                            "AppleWebKit/537.36 (KHTML, like Gecko) "
-                            "Chrome/120.0.0.0 Safari/537.36"),
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 locale="ko-KR",
             )
             page = await context.new_page()
 
+            # 최초 접근 시에만 로그인 브리지 URL을 사용
             login_bridge_url = f"https://pknuai.pknu.ac.kr/web/login/pknuLoginProc.do?mId=3&userId={PKNU_USERNAME}"
-            await page.goto(login_bridge_url, wait_until="networkidle", timeout=60000)
+            await page.goto(login_bridge_url, wait_until="networkidle")
+            logging.info("Playwright 세션 로그인 성공.")
 
-            target_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
+            # 실제 목표 URL로 이동
+            target_url = url
             if keyword:
-                encoded_keyword = quote(keyword)
-                target_url += f"&searchKeyword={encoded_keyword}"
+                target_url = f"https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3&searchKeyword={quote(keyword)}"
 
-            await page.goto(target_url, wait_until="networkidle", timeout=60000)
+            logging.info(f"타겟 URL로 이동: {target_url}")
+            await page.goto(target_url, wait_until="networkidle")
 
             if filters and any(filters.values()):
                 logging.info(f"필터를 적용합니다: {filters}")
@@ -228,14 +223,10 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                     if is_selected:
                         input_id = PROGRAM_FILTER_MAP.get(filter_name)
                         if input_id:
-                            # 올바른 CSS 선택자 label[for='...'] 를 사용합니다.
                             await page.click(f"label[for='{input_id}']")
-                await page.wait_for_load_state("networkidle", timeout=30000)
-                logging.info("필터 적용 완료.")
+                await page.wait_for_load_state("networkidle")
 
-            content = await page.content()
-            logging.info("✅ Playwright 크롤링 성공")
-            return content
+            return await page.content()
 
         except Exception as e:
             logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
@@ -283,16 +274,12 @@ async def get_school_notices(category: str = "") -> list:
         logging.exception(f"❌ 공지사항 파싱 중 오류 발생: {e}")
         return []
 
-# script.py
-
-# script.py
-
-async def summarize_text(text: str) -> str:
+async def summarize_text(text: str, original_title: str) -> dict:
     """
-    모든 학생 사용자를 대상으로 공지사항의 핵심 정보를 추출하고, 실천을 돕기 위해 고도화된 AI 요약 함수 (최종 버전).
+    공지사항 원문과 원본 제목을 받아, 정제된 제목과 AI 요약문을 포함한 딕셔너리를 반환하는 고도화된 함수.
     """
     if not text or not text.strip():
-        return "요약할 수 없는 공지입니다."
+        return {"refined_title": original_title, "summary_body": "요약할 수 없는 공지입니다."}
 
     analysis_viewpoint = """
     - <b>대상:</b> 모든 부경대학교 학부생
@@ -310,7 +297,7 @@ async def summarize_text(text: str) -> str:
 {analysis_viewpoint}
 
 ### 작업 규칙 (매우 중요)
-1.  **제목 정제:** 원본 제목에서 날짜, 이모지, 부서명 등 불필요한 수식어는 제거하고 핵심 내용만 남겨 간결한 제목으로 만든다.
+1.  **제목 정제:** '공지사항 원본 제목'에서 날짜, 이모지, 부서명 등 불필요한 수식어는 제거하고 핵심 내용만 남겨 간결한 제목으로 만든다.
 2.  **정보 추출 강화:** '정보 없음'을 최소화해야 한다. 각 항목에 해당하는 내용이 있는지 원문을 여러 번 읽고, 명시적인 단어가 없더라도 문맥을 통해 **반드시 내용을 추론하여 채워넣는다.**
 3.  **중요도 평가 보정 (5점 척도):** 아래의 엄격한 기준에 따라 중요도를 ⭐ 1개에서 5개까지로 평가한다.
     - ⭐⭐⭐⭐⭐ (필수/긴급): 수강신청, 등록금, 성적, 졸업 등 **모든 학생의 학사에 직접적이고 긴급한 영향을 미치는 공지.**
@@ -319,48 +306,38 @@ async def summarize_text(text: str) -> str:
     - ⭐⭐ (관심 시 확인): 소수 대상 행사, 동아리 모집, 일반적인 대외활동 등.
     - ⭐ (참고): 단순 정보 공지, 시설 안내, 홍보 등.
 4.  **평가 근거 형식:** '평가 근거'는 완전한 문장이 아닌, '전체 학생 대상, 성적 장학금, 높은 중요도' 와 같이 **핵심 키워드를 명사형으로 나열**하여 간결하게 제시한다.
-5.  **추천 액션 구체화:** 학생들의 행동을 유도하는 것이 핵심. 마감 기한, 혜택의 크기, 절차의 복잡성을 종합적으로 고려하여 "지금 바로 캘린더에 마감일 등록하기", "첨부파일 확인 필수" 등 **실질적인 다음 행동**을 1~2개 제안한다.
+5.  **추천 액션 구체화:** 아래 기준을 종합적으로 고려하여 **실질적인 다음 행동**을 1~2개 제안한다.
+    - **마감 임박성:** 마감까지 3일 이내 남았다면 "마감이 임박했어요, 지금 바로 신청하세요!" 와 같이 긴급성을 강조.
+    - **혜택의 희소성:** 선착순이거나 혜택이 매우 좋다면 "인기 많은 활동이니 빠르게 지원하는 걸 추천해요." 라고 제안.
+    - **절차의 간편성:** 신청 방법이 간단하면 "절차가 간단하니 5분만 투자해서 신청해보세요." 라고 실천 장벽을 낮춰줌.
 6.  **다양하고 일관된 태그 생성:** 아래 예시 목록을 참고하여, 가장 관련 있는 태그를 2~5개 선택하여 맨 마지막에 추가한다. **단과대학, 학과 태그는 공지 내용과 관련 있을 경우에만 추가한다.**
     - [분야] #학사일정 #장학금 #취업 #채용 #인턴 #공모전 #특강 #대외활동 #교내활동 #프로그램 #마일리지
     - [단과대학] #공과대학 #인문사회과학대학 #자연과학대학 #경영대학 #수산과학대학 #정보융합대학
     - [주요학과] #기계공학과 #컴퓨터공학과 #IT융합응용공학과 #데이터정보과학부 #경영학과
 
-### 출력 형식 (이 형식과 순서를 반드시 준수할 것)
-<b>정제된 공지사항 제목</b>
-
-<b>⭐ 한 줄 요약 및 중요도</b>
-- (공지의 핵심 내용을 한 문장으로 요약하고, 그 뒤에 중요도를 ⭐ 1~5개로 표시)
-- *평가 근거: (명사형으로 축약된 핵심 키워드 나열)*
-
-<b>📋 핵심 정보</b>
-- <b>지원 자격:</b>
-- <b>주요 혜택:</b>
-- <b>모집/운영 기간:</b>
-- <b>신청 방법:</b>
-- <b>문의처:</b>
-
-<b>🚀 추천 액션</b>
-- 
-
-<b>#️⃣ 관련 태그</b>
--
+### 출력 형식 (Key-Value JSON 형식)
+{{
+    "refined_title": "AI가 정제한 새로운 공지 제목",
+    "summary_body": "<b>⭐⭐⭐(여기 별 개수를 수정) 한 줄 요약</b>\\n- *평가 근거: 명사형 키워드 나열*\\n\\n<b>📋 핵심 정보</b>\\n- <b>지원 자격:</b> ...\\n- <b>주요 혜택:</b> ...\\n- <b>모집/운영 기간:</b> ...\\n- <b>신청 방법:</b> ...\\n- <b>문의처:</b> ...\\n\\n<b>🚀 추천 액션</b>\\n- ...\\n\\n<b>#️⃣ 관련 태그</b>\\n- ..."
+}}
 """
     try:
         response = await aclient.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": prompt},
-                {"role": "user", "content": f"### 공지사항 원문\n{text}"}
+                {"role": "user", "content": f"### 공지사항 원본 제목\n{original_title}\n\n### 공지사항 원문\n{text}"}
             ],
+            response_format={"type": "json_object"},
             temperature=0.1,
             max_tokens=1500
         )
-        summary = response.choices[0].message.content.strip()
-        summary = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', summary)
-        return summary
+        result = json.loads(response.choices[0].message.content)
+        result["summary_body"] = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', result.get("summary_body", ""))
+        return result
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
-        return "요약 중 오류가 발생했습니다. 나중에 다시 시도해주세요."
+        return {"refined_title": original_title, "summary_body": "요약 중 오류가 발생했습니다."}
         
 async def ocr_image_from_url(session: aiohttp.ClientSession, url: str) -> str:
     """URL에서 이미지를 비동기적으로 받아 OCR을 수행하고 텍스트를 반환합니다."""
@@ -385,55 +362,41 @@ async def ocr_image_from_url(session: aiohttp.ClientSession, url: str) -> str:
         logging.error(f"이미지 OCR 처리 중 오류 발생 {url}: {e}", exc_info=True)
         return ""
 
-async def extract_content(url: str) -> tuple:
+async def extract_content(url: str, original_title: str) -> dict:
     """
-    웹페이지 본문을 추출하고, 텍스트가 부족하면 이미지에서 OCR을 수행하여 요약합니다.
+    웹페이지 본문을 추출하고, 요약하여 정제된 제목, 요약 본문, 이미지 목록을 포함한 딕셔너리를 반환합니다.
     """
     try:
         html_content = await fetch_url(url)
         if not html_content:
-            return ("페이지 내용을 불러올 수 없습니다.", [])
+            return {"refined_title": original_title, "summary_body": "페이지 내용을 불러올 수 없습니다.", "images": []}
 
         soup = BeautifulSoup(html_content, "html.parser")
         container = soup.find("div", class_="bdvTxt_wrap") or soup
-
-        # 1. 원본 텍스트 추출
+        
         raw_text = " ".join(container.get_text(separator=" ", strip=True).split())
-        # 2. 이미지 URL 목록 추출
-        images = [
-            urllib.parse.urljoin(url, img["src"])
-            for img in container.find_all("img")
-            if img.get("src")
-        ]
+        images = [urllib.parse.urljoin(url, img["src"]) for img in container.find_all("img") if img.get("src")]
 
-        summary_text = ""
-        # 3. 텍스트가 100자 미만으로 매우 적고 이미지가 있을 경우에만 OCR 수행
+        text_to_summarize = raw_text
         if (not raw_text or len(raw_text) < 100) and images:
             logging.info(f"텍스트가 부족하여 이미지 OCR을 시도합니다: {url}")
-            # aiohttp 세션을 한 번 생성하여 모든 이미지 다운로드에 재사용
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
                 tasks = [ocr_image_from_url(session, img_url) for img_url in images]
                 ocr_texts = await asyncio.gather(*tasks)
-
+            
             full_ocr_text = "\n".join(filter(None, ocr_texts))
-
             if full_ocr_text.strip():
-                # OCR로 추출된 텍스트를 요약
-                summary_text = await summarize_text(full_ocr_text)
+                text_to_summarize = full_ocr_text
             else:
-                summary_text = "이미지가 있으나 텍스트를 추출할 수 없었습니다."
-        else:
-            # 텍스트가 충분하면 기존 방식대로 텍스트 요약
-            summary_text = await summarize_text(raw_text)
+                return {"refined_title": original_title, "summary_body": "이미지가 있으나 텍스트를 추출할 수 없었습니다.", "images": images}
 
-        return (summary_text, images)
+        summary_dict = await summarize_text(text_to_summarize, original_title)
+        summary_dict["images"] = images
+        return summary_dict
 
     except Exception as e:
         logging.error(f"❌ 본문 내용 추출 오류 {url}: {e}", exc_info=True)
-        return ("내용 처리 중 오류가 발생했습니다.", [])
-
+        return {"refined_title": original_title, "summary_body": "내용 처리 중 오류가 발생했습니다.", "images": []}
 # ▼ 추가: PKNU AI 비교과 파싱 함수
 # script.py
 
@@ -469,7 +432,7 @@ def _parse_pknuai_page(soup: BeautifulSoup) -> list:
     return programs
     
 async def get_pknuai_programs() -> list:
-    """PKNU AI 비교과 프로그램 목록을 가져옵니다 (로그인 포함)."""
+    """PKNU AI 비교과 프로그램 목록을 가져옵니다"""
     html_content = await fetch_program_html()
     if not html_content:
         return []
@@ -481,31 +444,33 @@ async def get_pknuai_programs() -> list:
 ################################################################################
 async def send_notification(notice: tuple, target_chat_id: str):
     """
-    공지사항 알림을 전송하는 함수 (첫 이미지를 캡션과 함께 전송)
+    AI가 요약하고 정제한 정보를 바탕으로 공지사항 알림을 전송하는 함수.
     """
-    title, href, department, date_ = notice
-    summary, images = await extract_content(href)
+    original_title, href, department, date_ = notice
     
-    # 1. 메시지 본문과 키보드를 미리 준비합니다.
+    summary_data = await extract_content(href, original_title)
+    
+    refined_title = summary_data.get("refined_title", original_title)
+    summary_body = summary_data.get("summary_body", "요약 정보를 불러올 수 없습니다.")
+    images = summary_data.get("images", [])
+
     message_text = (
-        f"<b>[부경대 {html.escape(department)} 공지]</b>\n{html.escape(title)}\n\n"
-        f"<i>{html.escape(date_)}</i>\n______________________________________________\n{summary}"
+        f"<b>{html.escape(refined_title)}</b>\n\n"
+        f"{summary_body}\n\n"
+        f"<i>- {html.escape(department)} / {html.escape(date_)}</i>"
     )
     keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
+        inline_keyboard=[[InlineKeyboardButton(text="🔗 원본 공지 확인하기", url=href)]]
     )
 
-    # 2. 이미지가 있는 경우, 첫 이미지를 캡션과 함께 전송 시도
     if images:
         try:
-            # aiohttp 세션을 사용하여 첫 번째 이미지만 비동기적으로 다운로드
             async with aiohttp.ClientSession() as session:
                 async with session.get(images[0]) as resp:
                     if resp.status == 200:
                         image_bytes = await resp.read()
                         photo_file = BufferedInputFile(image_bytes, filename="photo.jpg")
                         
-                        # 사진 전송 API를 사용하여 이미지와 텍스트(캡션)를 한 번에 보냅니다.
                         await bot.send_photo(
                             chat_id=target_chat_id,
                             photo=photo_file,
@@ -513,22 +478,19 @@ async def send_notification(notice: tuple, target_chat_id: str):
                             reply_markup=keyboard,
                             parse_mode="HTML"
                         )
-                        return # 성공적으로 보내면 함수 종료
-
+                        return
         except Exception as e:
             logging.error(f"이미지와 함께 메시지 전송 실패 (텍스트만 전송으로 대체): {e}", exc_info=True)
-            # 실패 시 사용자에게 간단히 알릴 수 있습니다.
             message_text += "\n\n<i>(공지 이미지를 불러오는 데 실패했습니다.)</i>"
 
-    # 3. 이미지가 없거나, 전송에 실패한 경우 텍스트 메시지만 보냅니다.
     await bot.send_message(
         chat_id=target_chat_id,
         text=message_text,
         reply_markup=keyboard,
         parse_mode="HTML",
-        disable_web_page_preview=True # 텍스트만 보낼 땐 링크 미리보기 비활성화
+        disable_web_page_preview=True
     )
-
+    
 # ▼ 추가: PKNU AI 프로그램 알림 전송 함수
 async def send_pknuai_program_notification(program: dict, summary: str, target_chat_id: str):
     """
@@ -803,9 +765,10 @@ async def my_programs_handler(callback: CallbackQuery):
         await callback.message.edit_text("🎯 먼저 필터를 선택해주세요:", reply_markup=keyboard)
         return
 
-    status_msg = await callback.message.edit_text("📊 필터로 검색 중... (로그인 필요)")
-
-    html_content = await fetch_program_html(filters=user_filters)
+    status_msg = await callback.message.edit_text("📊 필터로 검색 중...")
+    
+    list_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
+    html_content = await fetch_program_html(list_url, filters=user_filters)
     
     await status_msg.delete()
 
@@ -817,10 +780,8 @@ async def my_programs_handler(callback: CallbackQuery):
     if not programs:
         await callback.message.answer("조건에 맞는 프로그램이 없습니다.")
     else:
-        # 결과를 하나씩 순차적으로 전송합니다.
         for program in programs:
-            # 상세 페이지 내용을 가져와 요약합니다.
-            detail_html = await fetch_url(program['href'])
+            detail_html = await fetch_program_html(program['href']) # 세션을 유지하며 상세 페이지 접근
             detail_text = ""
             if detail_html:
                 detail_soup = BeautifulSoup(detail_html, 'html.parser')
@@ -828,8 +789,8 @@ async def my_programs_handler(callback: CallbackQuery):
                 if content_area:
                     detail_text = content_area.get_text(strip=True)
             
-            summary = await summarize_text(detail_text)
-            await send_pknuai_program_notification(program, summary, callback.message.chat.id)
+            summary_dict = await summarize_text(detail_text, program['title'])
+            await send_pknuai_program_notification(program, summary_dict, callback.message.chat.id)
             
 @dp.callback_query(lambda c: c.data == "compare_programs")
 async def compare_programs_handler(callback: CallbackQuery):
@@ -854,8 +815,10 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
     keyword = message.text.strip()
     await state.clear()
 
-    status_msg = await message.answer(f"🔍 '{keyword}' 키워드로 검색 중입니다... (로그인 필요)")
-    html_content = await fetch_program_html(keyword=keyword)
+    status_msg = await message.answer(f"🔍 '{keyword}' 키워드로 검색 중입니다...")
+    
+    list_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
+    html_content = await fetch_program_html(list_url, keyword=keyword)
 
     await status_msg.delete()
 
@@ -867,19 +830,17 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
     if not programs:
         await message.answer(f"❌ '{keyword}' 키워드에 해당하는 프로그램이 없습니다.")
     else:
-        # 결과를 하나씩 순차적으로 전송합니다.
         for program in programs:
-            # 상세 페이지 내용을 가져와 요약합니다.
-            detail_html = await fetch_url(program['href'])
+            detail_html = await fetch_program_html(program['href']) # 세션을 유지하며 상세 페이지 접근
             detail_text = ""
             if detail_html:
                 detail_soup = BeautifulSoup(detail_html, 'html.parser')
                 content_area = detail_soup.select_one(".wh-body")
                 if content_area:
                     detail_text = content_area.get_text(strip=True)
-            
-            summary = await summarize_text(detail_text)
-            await send_pknuai_program_notification(program, summary, message.chat.id)
+
+            summary_dict = await summarize_text(detail_text, program['title'])
+            await send_pknuai_program_notification(program, summary_dict, message.chat.id)
 
 ################################################################################
 #                            기타 상태 및 메시지 핸들러                            #
