@@ -219,7 +219,7 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             await page.goto(login_bridge_url, wait_until="networkidle", timeout=60000)
 
             # 2. 로그인 후, 비교과 프로그램 목록 페이지로 직접 이동
-            program_list_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/programList.do?mId=216"
+            program_list_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3&order=3"
             logging.info(f"2. 비교과 프로그램 목록 페이지로 이동합니다: {program_list_url}")
             await page.goto(program_list_url, wait_until="networkidle", timeout=60000)
             
