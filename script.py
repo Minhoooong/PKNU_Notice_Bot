@@ -468,7 +468,8 @@ def parse_pknuai_program_details(soup: BeautifulSoup) -> dict:
     
 async def get_pknuai_programs() -> list:
     """PKNU AI 비교과 프로그램 목록을 가져옵니다"""
-    html_content = await fetch_program_html()
+    program_list_url = f"{PKNUAI_BASE_URL}/web/nonSbjt/program.do?mId=216&order=3"
+    html_content = await fetch_program_html(program_list_url)
     if not html_content:
         return []
     soup = BeautifulSoup(html_content, 'html.parser')
