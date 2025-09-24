@@ -812,43 +812,6 @@ async def register_command(message: types.Message):
             logging.info(f"새 사용자 등록: {user_id_str}")
     else:
         await message.answer("❌ 등록 코드가 올바르지 않습니다.")
-@dp.callback_query(lambda c: c.data == "personalization_menu")
-async def personalization_menu_handler(callback: CallbackQuery):
-    """개인화 설정 메뉴를 표시하는 핸들러"""
-    await callback.answer()
-    user_id_str = str(callback.message.chat.id)
-    
-    is_enabled = ALLOWED_USERS.get(user_id_str, {}).get("personalization_enabled", False)
-    
-    button_text = f"✅ 개인화 요약 ON" if is_enabled else f"⬜️ 개인화 요약 OFF"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=button_text, callback_data="toggle_personalization")],
-        [InlineKeyboardButton(text="⬅️ 뒤로가기", callback_data="back_to_start")]
-    ])
-    
-    await callback.message.edit_text(
-        "<b>개인화 요약 설정</b>\n\n"
-        "이 기능을 켜면, 등록된 프로필(학과, 학년, 관심사)을 바탕으로 공지사항의 중요도와 평가 근거가 맞춤형으로 제공됩니다.\n\n"
-        "<i>(현재는 '기계공학과 2학년' 프로필만 고정 등록되어 있습니다.)</i>",
-        reply_markup=keyboard
-    )
-
-@dp.callback_query(lambda c: c.data == "toggle_personalization")
-async def toggle_personalization_handler(callback: CallbackQuery):
-    """개인화 설정을 ON/OFF하는 핸들러"""
-    user_id_str = str(callback.message.chat.id)
-    
-    if user_id_str not in ALLOWED_USERS:
-        await callback.answer("사용자 정보가 없습니다. /register를 먼저 진행해주세요.", show_alert=True)
-        return
-        
-    current_status = ALLOWED_USERS[user_id_str].get("personalization_enabled", False)
-    new_status = not current_status
-    ALLOWED_USERS[user_id_str]["personalization_enabled"] = new_status
-    
-    save_whitelist(ALLOWED_USERS)
-    push_file_changes(WHITELIST_FILE, f"User {user_id_str} toggled personalization to {new_status}")
     
     await callback.answer(f"개인화 요약이 {'ON' if new_status else 'OFF'} 되었습니다.")
     
