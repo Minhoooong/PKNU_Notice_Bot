@@ -531,48 +531,26 @@ async def check_for_new_notices(target_chat_id: str):
         push_cache_changes()
 
 # ▼ 추가: PKNU AI 프로그램 확인 함수
-# script.py
-
-# script.py
-
 async def check_for_new_pknuai_programs(target_chat_id: str):
-    logging.info("새로운 AI 비교과 프로그램을 확인합니다...")
-    seen = load_pknuai_program_cache()
-
-    # ▼▼▼ 1번 수정 사항 ▼▼▼
-    # 프로그램 목록 페이지 URL을 정의하고 fetch_program_html에 전달합니다.
-    program_list_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
-    html_content = await fetch_program_html(program_list_url)
-    # ▲▲▲ 1번 수정 사항 ▲▲▲
-    
-    if not html_content:
-        return
-        
-    soup = BeautifulSoup(html_content, 'html.parser')
-    current_programs_list = _parse_pknuai_page(soup)
-    found = False
-
+    # ... (생략) ...
     for program_summary in current_programs_list:
         key = generate_cache_key(program_summary['title'], program_summary['unique_id'])
         if key not in seen:
-            logging.info(f"새 AI 비교과 프로그램 발견: {program_summary['title']}")
-            
-            # ▼▼▼ 2번 수정 사항 ▼▼▼
-            # detail_url 키워드 인자를 제거하고 URL을 직접 전달합니다.
+            # ... (생략) ...
             detail_html = await fetch_program_html(program_summary['href'])
-            # ▲▲▲ 2번 수정 사항 ▲▲▲
-
             if not detail_html:
                 continue
 
             soup = BeautifulSoup(detail_html, 'html.parser')
-            content_area = soup.select_one(".wh-body")
+            # .wh-body 대신 .pi_box 내부의 pre 태그를 찾도록 변경합니다.
+            content_area = soup.select_one(".pi_box pre")
             detail_text = content_area.get_text(strip=True) if content_area else ""
-            
-            # summarize_text 함수 호출 시 원본 제목을 함께 전달해야 합니다.
-            summary = await summarize_text(detail_text, program_summary['title'])
 
-            await send_pknuai_program_notification(program_summary, summary, target_chat_id)
+            summary_dict = await summarize_text(detail_text, program_summary['title'])
+            summary_body = summary_dict.get("summary_body", "요약 중 오류가 발생했습니다.")
+
+            # send_pknuai_program_notification 함수는 요약된 '본문'을 필요로 합니다.
+            await send_pknuai_program_notification(program_summary, summary_body, target_chat_id)
 
             seen[key] = True
             found = True
@@ -797,7 +775,7 @@ async def my_programs_handler(callback: CallbackQuery):
             detail_text = ""
             if detail_html:
                 detail_soup = BeautifulSoup(detail_html, 'html.parser')
-                content_area = detail_soup.select_one(".wh-body")
+                content_area = detail_soup.select_one(".pi_box pre")
                 if content_area:
                     detail_text = content_area.get_text(strip=True)
             
@@ -847,7 +825,7 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
             detail_text = ""
             if detail_html:
                 detail_soup = BeautifulSoup(detail_html, 'html.parser')
-                content_area = detail_soup.select_one(".wh-body")
+                content_area = detail_soup.select_one(".pi_box pre")
                 if content_area:
                     detail_text = content_area.get_text(strip=True)
 
