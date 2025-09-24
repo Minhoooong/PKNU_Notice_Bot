@@ -597,23 +597,29 @@ async def check_for_new_notices(target_chat_id: str):
         save_cache(seen)
         push_cache_changes()
 
-# ▼ 추가: PKNU AI 프로그램 확인 함수
 async def check_for_new_pknuai_programs(target_chat_id: str):
-    # ... (생략) ...
+    """새로운 PKNU AI 비교과 프로그램을 확인하고 알림을 보냅니다. (오류 수정)"""
+    logging.info("새로운 AI 비교과 프로그램을 확인합니다...")
+    seen = load_pknuai_program_cache()
+    
+    # ✨ [수정] get_pknuai_programs()를 호출하여 프로그램 목록을 가져옵니다.
+    current_programs_list = await get_pknuai_programs() 
+    found = False
+
     for program_summary in current_programs_list:
+        # unique_id를 사용하도록 키 생성 방식을 통일합니다.
         key = generate_cache_key(program_summary['title'], program_summary['unique_id'])
         if key not in seen:
-            # ... (생략) ...
+            logging.info(f"새 비교과 프로그램 발견: {program_summary['title']}")
+            
             detail_html = await fetch_program_html(program_summary['href'])
             if not detail_html:
                 continue
 
-            soup = BeautifulSoup(detail_html, 'html.parser')
-            # .wh-body 대신 .pi_box 내부의 pre 태그를 찾도록 변경합니다.
+            # ✨ [수정] AI 요약 대신 직접 파싱 함수를 사용합니다.
             detail_soup = BeautifulSoup(detail_html, 'html.parser')
             program_details = parse_pknuai_program_details(detail_soup)
 
-            # send_pknuai_program_notification 함수는 요약된 '본문'을 필요로 합니다.
             await send_pknuai_program_notification(program_summary, program_details, target_chat_id)
 
             seen[key] = True
@@ -835,16 +841,12 @@ async def my_programs_handler(callback: CallbackQuery):
         await callback.message.answer("조건에 맞는 프로그램이 없습니다.")
     else:
         for program in programs:
-            detail_html = await fetch_program_html(program['href']) # 세션을 유지하며 상세 페이지 접근
-            detail_text = ""
+            detail_html = await fetch_program_html(program['href'])
             if detail_html:
+                # ✨ [수정] AI 요약 대신 직접 파싱 함수를 사용합니다.
                 detail_soup = BeautifulSoup(detail_html, 'html.parser')
-                content_area = detail_soup.select_one(".pi_box pre")
-                if content_area:
-                    detail_text = content_area.get_text(strip=True)
-            
-            summary_dict = await summarize_text(detail_text, program['title'])
-            await send_pknuai_program_notification(program, summary_dict, callback.message.chat.id)
+                program_details = parse_pknuai_program_details(detail_soup)
+                await send_pknuai_program_notification(program, program_details, callback.message.chat.id)
             
 @dp.callback_query(lambda c: c.data == "compare_programs")
 async def compare_programs_handler(callback: CallbackQuery):
@@ -871,6 +873,7 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
 
     status_msg = await message.answer(f"🔍 '{keyword}' 키워드로 검색 중입니다...")
     
+    # 키워드 검색 시에는 URL을 직접 만들지 않고 fetch_program_html에 인자로 전달합니다.
     list_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
     html_content = await fetch_program_html(list_url, keyword=keyword)
 
@@ -885,16 +888,12 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
         await message.answer(f"❌ '{keyword}' 키워드에 해당하는 프로그램이 없습니다.")
     else:
         for program in programs:
-            detail_html = await fetch_program_html(program['href']) # 세션을 유지하며 상세 페이지 접근
-            detail_text = ""
+            detail_html = await fetch_program_html(program['href'])
             if detail_html:
+                # ✨ [수정] AI 요약 대신 직접 파싱 함수를 사용합니다.
                 detail_soup = BeautifulSoup(detail_html, 'html.parser')
-                content_area = detail_soup.select_one(".pi_box pre")
-                if content_area:
-                    detail_text = content_area.get_text(strip=True)
-
-            summary_dict = await summarize_text(detail_text, program['title'])
-            await send_pknuai_program_notification(program, summary_dict, message.chat.id)
+                program_details = parse_pknuai_program_details(detail_soup)
+                await send_pknuai_program_notification(program, program_details, message.chat.id)
 
 ################################################################################
 #                            기타 상태 및 메시지 핸들러                            #
