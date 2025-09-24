@@ -29,7 +29,7 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from urllib.parse import quote
 
 ################################################################################
-#                               환경 변수 / 토큰 / 상수 설정                          #
+#                               환경 변수 / 토큰 / 상수 설정                   #
 ################################################################################
 aclient = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
@@ -37,20 +37,17 @@ CHAT_ID = os.environ.get('CHAT_ID')
 GROUP_CHAT_ID = os.environ.get('GROUP_CHAT_ID')
 REGISTRATION_CODE = os.environ.get('REGISTRATION_CODE')
 
-# ▼ 추가: PKNU AI 비교과 로그인을 위한 학번/비밀번호
+# ▼ PKNU AI 비교과 로그인을 위한 학번
 PKNU_USERNAME = os.environ.get('PKNU_USERNAME')
-PKNU_PASSWORD = os.environ.get('PKNU_PASSWORD')
-
 
 URL = 'https://www.pknu.ac.kr/main/163'
 BASE_URL = 'https://www.pknu.ac.kr'
 CACHE_FILE = "announcements_seen.json"
 WHITELIST_FILE = "whitelist.json"
 
-# ▼ 추가: PKNU AI 비교과 시스템
+# ▼ PKNU AI 비교과 시스템
 PKNUAI_BASE_URL = "https://pknuai.pknu.ac.kr"
 PKNUAI_PROGRAM_CACHE_FILE = "programs_seen.json"
-PKNUAI_LIST = "https://pknuai.pknu.ac.kr/web/nonSbjt/programList.do?mId=216"
 
 logging.info("EasyOCR 리더를 로딩합니다... (최초 실행 시 시간이 걸릴 수 있습니다)")
 try:
@@ -60,18 +57,6 @@ try:
 except Exception as e:
     logging.error(f"❌ EasyOCR 로딩 실패: {e}", exc_info=True)
     ocr_reader = None  # 로딩 실패 시 ocr_reader를 None으로 설정
-
-def build_pknuai_sso_bridge(user_id: str, return_url: str = PKNUAI_LIST) -> str:
-    """
-    서비스 특성상 '학번이 들어간 중간 링크'를 반드시 거쳐야 로그인 루프가 풀린다.
-    학번은 PKNU_USERNAME에서 받아 매번 동적으로 브리지 URL을 만든다.
-    """
-    encoded_return = quote(return_url, safe="")
-    return (
-        "https://pknuai.pknu.ac.kr/web/login/pknuLoginProc.do"
-        f"?mId=3&userId={user_id}&returnUrl={encoded_return}"
-    )
-
 
 CATEGORY_CODES = {
     "전체": "", "공지사항": "10001", "비교과 안내": "10002", "학사 안내": "10003",
