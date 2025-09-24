@@ -612,15 +612,17 @@ async def check_for_new_pknuai_programs(target_chat_id: str):
 ################################################################################
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
-    # ... 기존 코드 (변경 없음)
     if str(message.chat.id) not in ALLOWED_USERS:
         await message.answer("이 봇은 등록된 사용자만 이용할 수 있습니다.\n등록하려면 `/register [등록코드]`를 입력해 주세요.")
         return
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="공지사항", callback_data="notice_menu"),
-                InlineKeyboardButton(text="비교과 프로그램", callback_data="compare_programs")
+                InlineKeyboardButton(text="📢 공지사항", callback_data="notice_menu"),
+                InlineKeyboardButton(text="🎓 비교과 프로그램", callback_data="compare_programs")
+            ],
+            [
+                InlineKeyboardButton(text="⚙️ 개인화 설정", callback_data="personalization_menu")
             ]
         ]
     )
@@ -628,7 +630,6 @@ async def start_command(message: types.Message):
 
 @dp.message(Command("register"))
 async def register_command(message: types.Message):
-    # ... 기존 코드 (변경 없음)
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         await message.answer("등록 코드를 함께 입력해주세요. 예: `/register 1234`")
@@ -638,14 +639,84 @@ async def register_command(message: types.Message):
         if user_id_str in ALLOWED_USERS:
             await message.answer("이미 등록된 사용자입니다.")
         else:
-            default_filters = {"1학년": False, "2학년": False, "3학년": False, "4학년": False, "도전": False, "소통": False, "인성": False, "창의": False, "협업": False, "전문": False, "신청가능": False}
-            ALLOWED_USERS[user_id_str] = {"filters": default_filters}
+            default_filters = {f: False for f in PROGRAM_FILTERS}
+            # 개인화 설정 기본값(false)을 추가합니다.
+            ALLOWED_USERS[user_id_str] = {
+                "filters": default_filters,
+                "personalization_enabled": False
+            }
             save_whitelist(ALLOWED_USERS)
-            push_file_changes(WHITELIST_FILE, "New user registration")
+            push_file_changes(WHITELIST_FILE, f"New user registration: {user_id_str}")
             await message.answer("✅ 등록이 완료되었습니다! 이제 모든 기능을 사용할 수 있습니다.")
             logging.info(f"새 사용자 등록: {user_id_str}")
     else:
         await message.answer("❌ 등록 코드가 올바르지 않습니다.")
+
+@dp.callback_query(lambda c: c.data == "personalization_menu")
+async def personalization_menu_handler(callback: CallbackQuery):
+    """개인화 설정 메뉴를 표시하는 핸들러"""
+    await callback.answer()
+    user_id_str = str(callback.message.chat.id)
+    
+    is_enabled = ALLOWED_USERS.get(user_id_str, {}).get("personalization_enabled", False)
+    
+    button_text = f"✅ 개인화 요약 ON" if is_enabled else f"⬜️ 개인화 요약 OFF"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=button_text, callback_data="toggle_personalization")],
+        [InlineKeyboardButton(text="⬅️ 뒤로가기", callback_data="back_to_start")]
+    ])
+    
+    await callback.message.edit_text(
+        "<b>개인화 요약 설정</b>\n\n"
+        "이 기능을 켜면, 등록된 프로필(학과, 학년, 관심사)을 바탕으로 공지사항의 중요도와 평가 근거가 맞춤형으로 제공됩니다.\n\n"
+        "<i>(현재는 '기계공학과 2학년' 프로필만 고정 등록되어 있습니다.)</i>",
+        reply_markup=keyboard
+    )
+
+@dp.callback_query(lambda c: c.data == "toggle_personalization")
+async def toggle_personalization_handler(callback: CallbackQuery):
+    """개인화 설정을 ON/OFF하는 핸들러"""
+    user_id_str = str(callback.message.chat.id)
+    
+    if user_id_str not in ALLOWED_USERS:
+        await callback.answer("사용자 정보가 없습니다. /register를 먼저 진행해주세요.", show_alert=True)
+        return
+        
+    current_status = ALLOWED_USERS[user_id_str].get("personalization_enabled", False)
+    new_status = not current_status
+    ALLOWED_USERS[user_id_str]["personalization_enabled"] = new_status
+    
+    save_whitelist(ALLOWED_USERS)
+    push_file_changes(WHITELIST_FILE, f"User {user_id_str} toggled personalization to {new_status}")
+    
+    await callback.answer(f"개인화 요약이 {'ON' if new_status else 'OFF'} 되었습니다.")
+    
+    # 변경된 상태를 반영하여 메뉴를 다시 표시
+    button_text = f"✅ 개인화 요약 ON" if new_status else f"⬜️ 개인화 요약 OFF"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=button_text, callback_data="toggle_personalization")],
+        [InlineKeyboardButton(text="⬅️ 뒤로가기", callback_data="back_to_start")]
+    ])
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+# 시작 메뉴로 돌아가는 콜백 핸들러 추가
+@dp.callback_query(lambda c: c.data == "back_to_start")
+async def back_to_start_handler(callback: CallbackQuery):
+    await callback.answer()
+    # /start 명령어의 메시지와 키보드를 재사용
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="📢 공지사항", callback_data="notice_menu"),
+                InlineKeyboardButton(text="🎓 비교과 프로그램", callback_data="compare_programs")
+            ],
+            [
+                InlineKeyboardButton(text="⚙️ 개인화 설정", callback_data="personalization_menu")
+            ]
+        ]
+    )
+    await callback.message.edit_text("안녕하세요! 부경대학교 알림 봇입니다.\n어떤 정보를 확인하시겠어요?", reply_markup=keyboard)
 
 @dp.callback_query(lambda c: c.data == "notice_menu")
 async def notice_menu_handler(callback: CallbackQuery):
