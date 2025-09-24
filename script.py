@@ -430,6 +430,41 @@ def _parse_pknuai_page(soup: BeautifulSoup) -> list:
             "unique_id": f"{yy}-{shtm}-{nonsubjc_cd}-{nonsubjc_crs_cd}"
         })
     return programs
+
+def parse_pknuai_program_details(soup: BeautifulSoup) -> dict:
+    """PKNU AI 시스템의 상세 페이지 HTML을 파싱하여 주요 정보 반환 (진행바를 위한 숫자 데이터 추출 포함)"""
+    details = {}
+
+    # pro_desc_box 내의 정보 추출 (기존과 동일)
+    pro_desc_box = soup.select_one(".pro_desc_box")
+    if pro_desc_box:
+        details["모집기간"] = pro_desc_box.find("span", string=re.compile(r"모집기간:")).find_next_sibling("span").get_text(strip=True, separator=" ").replace("\n", "").replace("\t", " ")
+        details["운영기간"] = pro_desc_box.find("span", string=re.compile(r"운영기간:")).find_next_sibling("span").get_text(strip=True, separator=" ").replace("\n", "").replace("\t", " ")
+        details["운영방식"] = pro_desc_box.find("span", string=re.compile(r"운영방식:")).find_next_sibling("span").get_text(strip=True)
+        details["장소"] = pro_desc_box.find("span", string=re.compile(r"장소:")).find_next_sibling("span").get_text(strip=True)
+        details["참여대상"] = pro_desc_box.find("span", string=re.compile(r"참여대상:")).find_next_sibling("span").get_text(strip=True)
+        details["예상 마일리지"] = pro_desc_box.find("span", string=re.compile(r"예상 마일리지:")).find_next_sibling("span").get_text(strip=True).replace("점","").strip() + "점"
+
+    # ✨ 핵심 수정: 모집인원 정보를 숫자로 추출
+    app_gauge = soup.select_one(".app_gauge")
+    if app_gauge:
+        # 텍스트에서 숫자만 추출하는 헬퍼 함수
+        get_num = lambda text: int(re.search(r'\d+', text).group()) if re.search(r'\d+', text) else 0
+
+        total_member_text = app_gauge.select_one(".total_member").get_text(strip=True) if app_gauge.select_one(".total_member") else "0"
+        volun_text = app_gauge.select_one(".volun").get_text(strip=True) if app_gauge.select_one(".volun") else "0"
+        
+        details["모집인원"] = get_num(total_member_text)
+        details["지원인원"] = get_num(volun_text)
+
+    # 내용, 신청안내 등 pre 태그 정보 추출 (기존과 동일)
+    for header in soup.select("h4.pi_header"):
+        header_text = header.get_text(strip=True)
+        content_box = header.find_next_sibling("div", class_="pi_box")
+        if content_box and content_box.select_one("pre"):
+            details[header_text] = content_box.select_one("pre").get_text(strip=True)
+
+    return details
     
 async def get_pknuai_programs() -> list:
     """PKNU AI 비교과 프로그램 목록을 가져옵니다"""
@@ -491,12 +526,44 @@ async def send_notification(notice: tuple, target_chat_id: str):
         disable_web_page_preview=True
     )
     
-# ▼ 추가: PKNU AI 프로그램 알림 전송 함수
-async def send_pknuai_program_notification(program: dict, summary: str, target_chat_id: str):
+async def send_pknuai_program_notification(program: dict, details: dict, target_chat_id: str):
     """
-    GPT가 요약한 AI 비교과 프로그램의 상세 정보를 전송하는 함수.
+    파싱된 AI 비교과 프로그램 정보를 유니코드 진행바와 함께 전송하는 최종 함수.
     """
     title = html.escape(program.get("title", "제목 없음"))
+    
+    # --- ✨ 유니코드 블록 문자 진행바 생성 ---
+    total = details.get("모집인원", 0)
+    current = details.get("지원인원", 0)
+    progress_bar = ""
+    if total > 0:
+        percent = min(round((current / total) * 100), 100)
+        filled_count = int(percent / 10) # 10칸 기준
+        empty_count = 10 - filled_count
+        
+        progress_bar = f"<b>📊 모집현황:</b> {current}명 / {total}명 ({percent}%)\n"
+        progress_bar += f"<b>[{'█' * filled_count}{'░' * empty_count}]</b>"
+    # --------------------------------------
+
+    message_body = []
+    # 진행바가 있다면 메시지 최상단에 추가
+    if progress_bar:
+        message_body.append(progress_bar)
+
+    # 표시할 정보와 이모지 매핑
+    info_map = {
+        "모집기간": "🗓️", "운영기간": "⏰", "운영방식": "💻", "장소": "📍",
+        "참여대상": "👥", "예상 마일리지": "💰",
+        "내용": "📋", "신청안내": "🔗", "모집안내": "📢"
+    }
+
+    for key, emoji in info_map.items():
+        if details.get(key):
+            value = str(details[key]) # 데이터 타입을 문자열로 통일
+            message_body.append(f"<b>{emoji} {key}:</b> {html.escape(value)}")
+    
+    # 각 정보 사이에 두 줄 개행을 넣어 가독성 확보
+    summary = "\n\n".join(message_body)
 
     message_text = (
         f"<b>[AI 비교과 프로그램]</b>\n"
@@ -505,7 +572,7 @@ async def send_pknuai_program_notification(program: dict, summary: str, target_c
         f"{summary}"
     )
     
-    # 상세 내용이 요약에 모두 포함되므로 링크 버튼 제거
+    # ✨ 핵심 수정: 로그인 세션 문제로 링크 버튼(reply_markup) 제거
     await bot.send_message(
         chat_id=target_chat_id,
         text=message_text,
@@ -543,14 +610,11 @@ async def check_for_new_pknuai_programs(target_chat_id: str):
 
             soup = BeautifulSoup(detail_html, 'html.parser')
             # .wh-body 대신 .pi_box 내부의 pre 태그를 찾도록 변경합니다.
-            content_area = soup.select_one(".pi_box pre")
-            detail_text = content_area.get_text(strip=True) if content_area else ""
-
-            summary_dict = await summarize_text(detail_text, program_summary['title'])
-            summary_body = summary_dict.get("summary_body", "요약 중 오류가 발생했습니다.")
+            detail_soup = BeautifulSoup(detail_html, 'html.parser')
+            program_details = parse_pknuai_program_details(detail_soup)
 
             # send_pknuai_program_notification 함수는 요약된 '본문'을 필요로 합니다.
-            await send_pknuai_program_notification(program_summary, summary_body, target_chat_id)
+            await send_pknuai_program_notification(program_summary, program_details, target_chat_id)
 
             seen[key] = True
             found = True
