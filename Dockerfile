@@ -4,7 +4,8 @@ FROM mcr.microsoft.com/playwright/python:v1.55.0-jammy
 # 작업 디렉토리를 설정합니다.
 WORKDIR /app
 
-# 시스템에 필요한 기본 패키지를 먼저 설치합니다. (이 레이어는 거의 바뀌지 않습니다)
+# 시스템에 필요한 기본 패키지를 먼저 설치합니다.
+# (이 레이어는 거의 바뀌지 않습니다)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     git-crypt \
@@ -19,7 +20,10 @@ COPY requirements.txt .
 # requirements.txt 파일이 변경되지 않는 한, 이 레이어는 캐시되어 재사용됩니다.
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 3. 모든 소스 코드를 마지막에 복사합니다.
+# 3. Playwright 브라우저 설치 (핵심 수정)
+RUN playwright install
+
+# 4. 모든 소스 코드를 마지막에 복사합니다.
 # script.py 등 코드 파일이 변경되면 이 레이어부터 다시 빌드됩니다.
 COPY . .
 
