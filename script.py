@@ -1050,7 +1050,7 @@ async def set_department_handler(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(lambda c: c.data.startswith("p13n_set_"))
 async def set_personalization_option_handler(callback: CallbackQuery, state: FSMContext):
-    _, category, option = callback.data.split("_", 3)
+    _, _, category, option = callback.data.split("_", 3)
     user_id_str = str(callback.message.chat.id)
     settings = ALLOWED_USERS[user_id_str]["personalization"]
     cat_info = PERSONALIZATION_OPTIONS[category]
