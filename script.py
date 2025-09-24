@@ -54,7 +54,8 @@ PKNUAI_LIST = "https://pknuai.pknu.ac.kr/web/nonSbjt/programList.do?mId=216"
 
 logging.info("EasyOCR 리더를 로딩합니다... (최초 실행 시 시간이 걸릴 수 있습니다)")
 try:
-    ocr_reader = easyocr.Reader(["ko", "en"], gpu=False)
+    # verbose=False 옵션을 추가하여 불필요한 로그 출력을 비활성화합니다.
+    ocr_reader = easyocr.Reader(["ko", "en"], gpu=False, verbose=False)
     logging.info("✅ EasyOCR 로딩 완료!")
 except Exception as e:
     logging.error(f"❌ EasyOCR 로딩 실패: {e}", exc_info=True)
@@ -472,10 +473,12 @@ async def get_pknuai_programs() -> list:
 ################################################################################
 async def send_notification(notice: tuple, target_chat_id: str):
     """
-    공지사항 알림을 전송하는 함수 (이미지 직접 다운로드 방식으로 수정)
+    공지사항 알림을 전송하는 함수 (첫 이미지를 캡션과 함께 전송)
     """
     title, href, department, date_ = notice
     summary, images = await extract_content(href)
+    
+    # 1. 메시지 본문과 키보드를 미리 준비합니다.
     message_text = (
         f"<b>[부경대 {html.escape(department)} 공지]</b>\n{html.escape(title)}\n\n"
         f"<i>{html.escape(date_)}</i>\n______________________________________________\n{summary}"
@@ -483,42 +486,40 @@ async def send_notification(notice: tuple, target_chat_id: str):
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="자세히 보기", url=href)]]
     )
-    # 텍스트 메시지를 먼저 보냅니다.
-    await bot.send_message(chat_id=target_chat_id, text=message_text,
-                           reply_markup=keyboard, parse_mode="HTML")
 
-    # 이미지가 있는 경우에만 아래 로직을 실행합니다.
+    # 2. 이미지가 있는 경우, 첫 이미지를 캡션과 함께 전송 시도
     if images:
         try:
-            # aiohttp 세션을 사용하여 이미지 파일들을 비동기적으로 다운로드합니다.
+            # aiohttp 세션을 사용하여 첫 번째 이미지만 비동기적으로 다운로드
             async with aiohttp.ClientSession() as session:
-                tasks = []
-                for url in images:
-                    tasks.append(asyncio.create_task(session.get(url)))
-
-                responses = await asyncio.gather(*tasks)
-                
-                media_files = []
-                for resp in responses:
+                async with session.get(images[0]) as resp:
                     if resp.status == 200:
-                        # 이미지 데이터를 메모리에 바이트 형태로 저장합니다.
                         image_bytes = await resp.read()
-                        # BufferedInputFile을 사용하여 파일 이름 없이 메모리 내 데이터를 직접 전달합니다.
-                        media_files.append(BufferedInputFile(image_bytes, filename="photo.jpg"))
-
-            if not media_files:
-                return # 다운로드한 이미지가 없으면 함수를 종료합니다.
-
-            if len(media_files) > 1:
-                # 여러 이미지일 경우 앨범으로 전송합니다.
-                media_group = [InputMediaPhoto(media=data) for data in media_files]
-                await bot.send_media_group(chat_id=target_chat_id, media=media_group)
-            else:
-                # 이미지 1장만 있을 경우 단일 사진으로 전송합니다.
-                await bot.send_photo(chat_id=target_chat_id, photo=media_files[0])
+                        photo_file = BufferedInputFile(image_bytes, filename="photo.jpg")
+                        
+                        # 사진 전송 API를 사용하여 이미지와 텍스트(캡션)를 한 번에 보냅니다.
+                        await bot.send_photo(
+                            chat_id=target_chat_id,
+                            photo=photo_file,
+                            caption=message_text,
+                            reply_markup=keyboard,
+                            parse_mode="HTML"
+                        )
+                        return # 성공적으로 보내면 함수 종료
 
         except Exception as e:
-            logging.error(f"이미지 전송 중 오류 발생: {e}", exc_info=True)
+            logging.error(f"이미지와 함께 메시지 전송 실패 (텍스트만 전송으로 대체): {e}", exc_info=True)
+            # 실패 시 사용자에게 간단히 알릴 수 있습니다.
+            message_text += "\n\n<i>(공지 이미지를 불러오는 데 실패했습니다.)</i>"
+
+    # 3. 이미지가 없거나, 전송에 실패한 경우 텍스트 메시지만 보냅니다.
+    await bot.send_message(
+        chat_id=target_chat_id,
+        text=message_text,
+        reply_markup=keyboard,
+        parse_mode="HTML",
+        disable_web_page_preview=True # 텍스트만 보낼 땐 링크 미리보기 비활성화
+    )
 
 # ▼ 추가: PKNU AI 프로그램 알림 전송 함수
 async def send_pknuai_program_notification(program: dict, target_chat_id: str):
