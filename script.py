@@ -297,17 +297,21 @@ async def get_school_notices(category: str = "") -> list:
         logging.exception(f"❌ 공지사항 파싱 중 오류 발생: {e}")
         return []
 
+# script.py
+
+# script.py
+
 async def summarize_text(text: str) -> str:
     """
-    사용자의 스펙업 관점에서 공지사항을 분석하고 요약하는 함수.
+    사용자의 스펙업 관점에서 공지사항을 분석하고 요약하는 함수 (최종 버전).
     """
     if not text or not text.strip():
         return "요약할 수 없는 공지입니다."
 
     user_profile = """
-    - **분석 대상:** 부경대학교 기계공학과 2학년 학생
-    - **주요 목표:** 스펙 향상, 장학금/마일리지 등 금전적/비금전적 혜택 획득
-    - **핵심 고려사항:** 투입 시간 대비 얻는 이득이 큰가? 나의 전공과 관련이 있는가? 내가 지원할 자격이 되는가?
+    - <b>분석 대상:</b> 부경대학교 기계공학과 2학년 학생
+    - <b>주요 목표:</b> 스펙 향상, 장학금/마일리지 등 금전적/비금전적 혜택 획득
+    - <b>핵심 고려사항:</b> 투입 시간 대비 얻는 이득이 큰가? 나의 전공과 관련이 있는가? 내가 지원할 자격이 되는가?
     """
 
     prompt = f"""
@@ -317,22 +321,19 @@ async def summarize_text(text: str) -> str:
 {user_profile}
 
 ### 분석 및 요약 형식
-1.  **중요도:** (1점에서 5점까지의 중요도를 '⭐' 이모지로만 표현해주세요. 예를 들어 3점이면 '⭐⭐⭐' 입니다.)
-    - *이 공지가 위 학생의 '주요 목표'에 얼마나 부합하는지 이유를 '전공 연관성', '예상 혜택', '참여 조건' 등을 근거로 간략히 설명해주세요.*
+1.  <b>⭐ 중요도 분석:</b> (1점에서 5점까지의 중요도를 '⭐' 이모지로만 표현. 예: ⭐⭐⭐)
+    - *전공 연관성, 예상 혜택, 참여 조건 등을 근거로 <b>핵심적인 이유만 간결하게</b> 설명.*
 
-2.  **📝 핵심 내용:**
-    - *이 공지에서 가장 중요한 핵심 내용을 한두 문장으로 요약해주세요.*
+2.  <b>🎁 주요 혜택 및 자격:</b>
+    - <b>지원 자격:</b> (명시된 자격 조건)
+    - <b>주요 혜택:</b> (마일리지, 장학금 등 명시된 혜택)
+    - <b>모집/운영 기간:</b> (신청 및 활동 기간)
 
-3.  **🎁 주요 혜택 및 자격:**
-    - **지원 자격:** (예: 2학년 이상, 기계공학부 학생 등 명시된 자격 조건)
-    - **주요 혜택:** (예: 비교과 마일리지 10점, 장학금 50만 원, 수료증 발급 등)
-    - **모집/운영 기간:** (신청 및 활동 기간)
+3.  <b>✅ 체크포인트:</b>
+    - *신청 방법, 문의처 등 학생이 행동을 취하기 위해 꼭 알아야 할 정보.*
 
-4.  **✅ 체크포인트:**
-    - *신청 방법, 문의처 등 학생이 행동을 취하기 위해 꼭 알아야 할 정보를 간결하게 정리해주세요.*
-
-*각 항목에 대한 정보가 원문에 없으면 반드시 "정보 없음"이라고 명확히 기재해주세요.*
-*중요한 키워드는 반드시 `<b>`와 `</b>` 태그로 감싸서 강조해주세요.*
+각 항목에 대한 정보가 원문에 없으면 반드시 "정보 없음"이라고 명확히 기재해주세요.
+중요한 키워드는 반드시 `<b>`와 `</b>` 태그로 감싸서 강조해주세요. `**`는 사용하지 마세요.
 """
     try:
         response = await aclient.chat.completions.create(
@@ -341,7 +342,10 @@ async def summarize_text(text: str) -> str:
             temperature=0.1,
             max_tokens=1000
         )
-        return response.choices[0].message.content.strip()
+        summary = response.choices[0].message.content.strip()
+        # 만약을 위해 한 번 더 변환
+        summary = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', summary)
+        return summary
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
         return "요약 중 오류가 발생했습니다."
@@ -419,57 +423,36 @@ async def extract_content(url: str) -> tuple:
         return ("내용 처리 중 오류가 발생했습니다.", [])
 
 # ▼ 추가: PKNU AI 비교과 파싱 함수
+# script.py
+
 def _parse_pknuai_page(soup: BeautifulSoup) -> list:
-    """PKNU AI 시스템의 HTML을 파싱하여 프로그램 목록 반환 (상세 정보 추가)"""
+    """PKNU AI 시스템의 HTML을 파싱하여 프로그램 목록 반환 (상세 페이지 URL 추출)"""
     programs = []
     items = soup.select("li.col-xl-3.col-lg-4.col-md-6")
 
     for li in items:
+        card_body = li.select_one(".card-body[data-url]")
+        if not card_body:
+            continue
+            
         title_element = li.select_one("h5 a.ellip_2")
         title = title_element.get_text(strip=True) if title_element else "제목 없음"
-
-        status_element = li.select_one(".pin_area span")
-        status = status_element.get_text(strip=True) if status_element else "모집 예정"
         
-        # ▼▼▼▼▼ 추가된 파싱 로직 ▼▼▼▼▼
-        # 주관 학과 및 프로그램 종류
-        category_elements = li.select(".cate .name_of_class span")
-        department = category_elements[0].get_text(strip=True) if len(category_elements) > 0 else "정보 없음"
-        program_type = category_elements[1].get_text(strip=True) if len(category_elements) > 1 else "정보 없음"
-
-        # 프로그램 설명
-        description = li.select_one("p.card-desc")
-        desc_text = description.get_text(strip=True) if description else "정보 없음"
+        yy = card_body.get("data-yy")
+        shtm = card_body.get("data-shtm")
+        nonsubjc_cd = card_body.get("data-nonsubjc-cd")
+        nonsubjc_crs_cd = card_body.get("data-nonsubjc-crs-cd")
         
-        # D-day
-        d_day_element = li.select_one(".app_ddate")
-        d_day = d_day_element.get_text(strip=True) if d_day_element else ""
-
-        # 기간 정보 (기존과 동일)
-        periods = li.select(".app_date .col-8 p")
-        recruit_period = ' '.join(periods[0].get_text(separator=' ', strip=True).split()) if len(periods) > 0 else "정보 없음"
-        recruit_period = recruit_period.replace("모집기간 ", "")
-        operation_period = ' '.join(periods[1].get_text(separator=' ', strip=True).split()) if len(periods) > 1 else "정보 없음"
-        operation_period = operation_period.replace("운영기간 ", "")
-
-        # 모집인원 정보 (기존과 동일)
-        apply_count_element = li.select_one(".app_gauge .volun")
-        total_count_element = li.select_one(".app_gauge .total_member")
-        apply_info = "정보 없음"
-        if apply_count_element and total_count_element:
-            apply_info = f"{apply_count_element.text.strip().replace(' 지원', '')} / {total_count_element.text.strip()}"
-        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        if not all([yy, shtm, nonsubjc_cd, nonsubjc_crs_cd]):
+            continue
+            
+        detail_url = (f"{PKNUAI_BASE_URL}/web/nonSbjt/programDetail.do?mId=216&order=3&"
+                      f"yy={yy}&shtm={shtm}&nonsubjcCd={nonsubjc_cd}&nonsubjcCrsCd={nonsubjc_crs_cd}")
 
         programs.append({
             "title": title,
-            "status": status,
-            "department": department,
-            "program_type": program_type,
-            "description": desc_text,
-            "d_day": d_day,
-            "recruit_period": recruit_period,
-            "operation_period": operation_period,
-            "apply_info": apply_info
+            "href": detail_url,
+            "unique_id": f"{yy}-{shtm}-{nonsubjc_cd}-{nonsubjc_crs_cd}"
         })
     return programs
     
@@ -535,40 +518,25 @@ async def send_notification(notice: tuple, target_chat_id: str):
     )
 
 # ▼ 추가: PKNU AI 프로그램 알림 전송 함수
-async def send_pknuai_program_notification(program: dict, target_chat_id: str):
+async def send_pknuai_program_notification(program: dict, summary: str, target_chat_id: str):
     """
-    AI 비교과 프로그램 알림을 전송하는 함수 (상세 정보 포함 및 링크 제거)
+    GPT가 요약한 AI 비교과 프로그램의 상세 정보를 전송하는 함수.
     """
     title = html.escape(program.get("title", "제목 없음"))
-    status = html.escape(program.get("status", "정보 없음"))
-    d_day = html.escape(program.get("d_day", ""))
-    
-    # D-day 정보가 있을 경우 제목에 함께 표시
-    if d_day:
-        title = f"{title} ({d_day})"
-        
-    department = html.escape(program.get("department", "정보 없음"))
-    program_type = html.escape(program.get("program_type", "정보 없음"))
-    recruit_period = html.escape(program.get("recruit_period", "정보 없음"))
-    operation_period = html.escape(program.get("operation_period", "정보 없음"))
-    apply_info = html.escape(program.get("apply_info", "정보 없음"))
-    description = html.escape(program.get("description", "정보 없음"))
 
     message_text = (
         f"<b>[AI 비교과 프로그램]</b>\n"
-        f"<b>{title}</b>\n\n"
-        f"▫️ <b>주관:</b> {department} ({program_type})\n"
-        f"▫️ <b>상태:</b> {status}\n"
-        f"▫️ <b>모집:</b> {recruit_period}\n"
-        f"▫️ <b>운영:</b> {operation_period}\n"
-        f"▫️ <b>인원:</b> {apply_info}\n\n"
-        f"<i>{description}</i>"
+        f"<b>{title}</b>\n"
+        f"______________________________________________\n\n"
+        f"{summary}"
     )
-
+    
+    # 상세 내용이 요약에 모두 포함되므로 링크 버튼 제거
     await bot.send_message(
         chat_id=target_chat_id,
         text=message_text,
-        parse_mode="HTML"
+        parse_mode="HTML",
+        disable_web_page_preview=True
     )
 
 async def check_for_new_notices(target_chat_id: str):
@@ -589,23 +557,43 @@ async def check_for_new_notices(target_chat_id: str):
         push_cache_changes()
 
 # ▼ 추가: PKNU AI 프로그램 확인 함수
+# script.py
+
 async def check_for_new_pknuai_programs(target_chat_id: str):
     logging.info("새로운 AI 비교과 프로그램을 확인합니다...")
-    seen = load_program_cache()
-    current = await get_pknuai_programs()
+    seen = load_pknuai_program_cache()
+    # '나만의 프로그램(필터)'가 아닌 일반적인 신규 프로그램 확인이므로 filters=None
+    html_content = await fetch_program_html()
+    if not html_content:
+        return
+        
+    soup = BeautifulSoup(html_content, 'html.parser')
+    current_programs_list = _parse_pknuai_page(soup)
     found = False
-    for program in current:
-        # AI 비교과는 고유 ID 조합으로 키 생성
-        unique_id = f"{program['yy']}-{program['shtm']}-{program['nonsubjcCd']}-{program['nonsubjcCrsCd']}"
-        key = generate_cache_key(program['title'], unique_id)
+
+    for program_summary in current_programs_list:
+        key = generate_cache_key(program_summary['title'], program_summary['unique_id'])
         if key not in seen:
-            logging.info(f"새 AI 비교과 프로그램 발견: {program['title']}")
-            await send_pknuai_program_notification(program, target_chat_id)
+            logging.info(f"새 AI 비교과 프로그램 발견: {program_summary['title']}")
+            
+            detail_html = await fetch_program_html(detail_url=program_summary['href'])
+            if not detail_html:
+                continue
+
+            soup = BeautifulSoup(detail_html, 'html.parser')
+            content_area = soup.select_one(".wh-body")
+            detail_text = content_area.get_text(strip=True) if content_area else ""
+            
+            summary = await summarize_text(detail_text)
+
+            await send_pknuai_program_notification(program_summary, summary, target_chat_id)
+
             seen[key] = True
             found = True
+            
     if found:
-        save_program_cache(seen)
-        push_program_cache_changes()
+        save_pknuai_program_cache(seen)
+        push_pknuai_program_cache_changes()
 
 ################################################################################
 #                             명령어 및 기본 콜백 핸들러                            #
@@ -665,16 +653,35 @@ async def callback_filter_date(callback: CallbackQuery, state: FSMContext) -> No
 #                    ▼ 수정: 비교과 프로그램 메뉴 및 핸들러                          #
 ################################################################################
 PROGRAM_FILTERS = [
-    "1학년", "2학년", "3학년", "4학년", "도전", "소통", 
-    "인성", "창의", "협업", "전문", "신청가능"
+    # 역량별
+    "주도적 학습", "통섭적 사고", "확산적 연계",
+    "협력적 소통", "문화적 포용", "사회적 실천",
+    # 학년별
+    "1학년", "2학년", "3학년", "4학년",
+    # 유형별
+    "학생 학습역량 강화", "진로·심리 상담 지원", "취·창업 지원", "기타 활동"
 ]
+
 PROGRAM_FILTER_MAP = {
-    "1학년": "searchGrade1", "2학년": "searchGrade2", 
-    "3학년": "searchGrade3", "4학년": "searchGrade4",
-    "도전": "searchIaq1", "소통": "searchIaq2", "인성": "searchIaq3",
-    "창의": "searchIaq4", "협업": "searchIaq5", "전문": "searchIaq6",
-    "신청가능": "searchApply"
+    # 역량별 (카테고리: diag, 값: B02, A01 등)
+    "주도적 학습": {"category": "diag", "value": "A01"},
+    "통섭적 사고": {"category": "diag", "value": "A02"},
+    "확산적 연계": {"category": "diag", "value": "A03"},
+    "협력적 소통": {"category": "diag", "value": "B01"},
+    "문화적 포용": {"category": "diag", "value": "B02"},
+    "사회적 실천": {"category": "diag", "value": "B03"},
+    # 학년별 (카테고리: std, 값: 1, 2 등)
+    "1학년": {"category": "std", "value": "1"},
+    "2학년": {"category": "std", "value": "2"},
+    "3학년": {"category": "std", "value": "3"},
+    "4학년": {"category": "std", "value": "4"},
+    # 유형별 (카테고리: clsf)
+    "학생 학습역량 강화": {"category": "clsf", "value": "A01"},
+    "진로·심리 상담 지원": {"category": "clsf", "value": "A02"},
+    "취·창업 지원": {"category": "clsf", "value": "A03"},
+    "기타 활동": {"category": "clsf", "value": "A04"}
 }
+
 def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     """AI 비교과 필터 메뉴 키보드를 생성합니다."""
     user_filters = ALLOWED_USERS.get(str(chat_id), {}).get("filters", {})
