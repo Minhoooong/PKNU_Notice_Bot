@@ -245,17 +245,18 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             content = await page.content()
             logging.info("✅ Playwright 크롤링 성공")
             
+            # context와 browser를 여기서 명시적으로 닫아줍니다.
+            await context.close()
+            await browser.close()
+            
             return content
 
         except Exception as e:
             logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
-            return ""
-        finally:
-            # try 블록이 성공적으로 끝나든, exception이 발생하든 항상 실행됩니다.
-            # browser 객체가 성공적으로 생성되었다면 여기서 모든 것을 닫아줍니다.
+            # 오류 발생 시에도 browser가 열려있다면 안전하게 닫습니다.
             if browser:
                 await browser.close()
-                logging.info("Playwright 브라우저를 종료했습니다.")
+            return ""
             
 async def fetch_url(url: str) -> str:
     """정적 페이지(학교 공지사항) 크롤링 함수"""
