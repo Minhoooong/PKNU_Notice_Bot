@@ -533,11 +533,18 @@ async def check_for_new_notices(target_chat_id: str):
 # ▼ 추가: PKNU AI 프로그램 확인 함수
 # script.py
 
+# script.py
+
 async def check_for_new_pknuai_programs(target_chat_id: str):
     logging.info("새로운 AI 비교과 프로그램을 확인합니다...")
     seen = load_pknuai_program_cache()
-    # '나만의 프로그램(필터)'가 아닌 일반적인 신규 프로그램 확인이므로 filters=None
-    html_content = await fetch_program_html()
+
+    # ▼▼▼ 1번 수정 사항 ▼▼▼
+    # 프로그램 목록 페이지 URL을 정의하고 fetch_program_html에 전달합니다.
+    program_list_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
+    html_content = await fetch_program_html(program_list_url)
+    # ▲▲▲ 1번 수정 사항 ▲▲▲
+    
     if not html_content:
         return
         
@@ -550,7 +557,11 @@ async def check_for_new_pknuai_programs(target_chat_id: str):
         if key not in seen:
             logging.info(f"새 AI 비교과 프로그램 발견: {program_summary['title']}")
             
-            detail_html = await fetch_program_html(detail_url=program_summary['href'])
+            # ▼▼▼ 2번 수정 사항 ▼▼▼
+            # detail_url 키워드 인자를 제거하고 URL을 직접 전달합니다.
+            detail_html = await fetch_program_html(program_summary['href'])
+            # ▲▲▲ 2번 수정 사항 ▲▲▲
+
             if not detail_html:
                 continue
 
@@ -558,7 +569,8 @@ async def check_for_new_pknuai_programs(target_chat_id: str):
             content_area = soup.select_one(".wh-body")
             detail_text = content_area.get_text(strip=True) if content_area else ""
             
-            summary = await summarize_text(detail_text)
+            # summarize_text 함수 호출 시 원본 제목을 함께 전달해야 합니다.
+            summary = await summarize_text(detail_text, program_summary['title'])
 
             await send_pknuai_program_notification(program_summary, summary, target_chat_id)
 
