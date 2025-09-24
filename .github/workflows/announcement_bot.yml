@@ -6,55 +6,33 @@ on:
     types: [rerun_announcement]
 
 jobs:
-  build:
+  run-bot:
+    # 모든 작업은 Docker가 설치된 기본 ubuntu-latest 환경에서 실행됩니다.
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/minhoooong/pknu_notice_bot:latest
-      credentials:
-        username: minhoooong
-        password: ${{ secrets.MY_PAT }}
-      env:
-        PLAYWRIGHT_BROWSERS_PATH: /root/.cache/ms-playwright
-        
+
     steps:
+      # 1. GHCR(Docker 이미지 저장소)에 로그인합니다.
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. 항상 최신 버전의 이미지를 강제로 내려받습니다.
       - name: Pull latest docker image
         run: docker pull ghcr.io/minhoooong/pknu_notice_bot:latest
-        
+
+      # 3. git-crypt로 암호화된 파일을 풀고, git push를 하기 위해 레포지토리 코드를 내려받습니다.
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          persist-credentials: true
-          fetch-depth: 0
-      
-      - name: Set safe directory explicitly
-        run: git config --global --add safe.directory "$(pwd)"
+          fetch-depth: 0 # git-crypt 사용 및 커밋을 위해 전체 히스토리 필요
 
-      - name: List workspace
-        run: |
-          echo "Current working directory: $(pwd)"
-          ls -la "$(pwd)"
-
-      - name: Unlock git-crypt
+      # 4. Docker 컨테이너 내부에서 봇 스크립트를 실행합니다.
+      - name: Run bot script in container
         env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
-        run: |
-          export GIT_CRYPT_ALLOW_UNSAFE_REPOSITORY=1
-          echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
-          git-crypt unlock keyfile
-
-      - name: Unlock git-crypt
-        env:
-          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
-        run: |
-          export GIT_CRYPT_ALLOW_UNSAFE_REPOSITORY=1
-          echo "$GIT_CRYPT_KEY" | base64 -d > keyfile
-          git-crypt unlock keyfile
-
-      - name: Synchronize with remote repository
-        run: git pull origin main
-
-      - name: Run announcement bot script
-        env:
+          # 스크립트에 필요한 모든 비밀 값들을 환경 변수로 전달합니다.
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           GROUP_CHAT_ID: ${{ secrets.GROUP_CHAT_ID }}
@@ -63,8 +41,39 @@ jobs:
           REGISTRATION_CODE: ${{ secrets.REGISTRATION_CODE }}
           PKNU_USERNAME: ${{ secrets.PKNU_USERNAME }}
           PKNU_PASSWORD: ${{ secrets.PKNU_PASSWORD }}
-        run: python3 script.py
+          GIT_CRYPT_KEY: ${{ secrets.GIT_CRYPT_KEY }}
+        run: |
+          # --rm: 스크립트 실행 후 컨테이너 자동 삭제
+          # -v: 현재 경로(checked out repo)를 컨테이너 내부 /app 경로에 연결(마운트)
+          # -w: 컨테이너의 작업 디렉토리를 /app으로 설정
+          # -e: env 블록의 변수들을 컨테이너 내부로 전달
+          docker run --rm \
+            -v ${{ github.workspace }}:/app \
+            -w /app \
+            -e TELEGRAM_TOKEN \
+            -e CHAT_ID \
+            -e GROUP_CHAT_ID \
+            -e OPENAI_API_KEY \
+            -e MY_PAT \
+            -e REGISTRATION_CODE \
+            -e PKNU_USERNAME \
+            -e PKNU_PASSWORD \
+            -e GIT_CRYPT_KEY \
+            ghcr.io/minhoooong/pknu_notice_bot:latest \
+            bash -c "
+              echo '1. Setting up git safe directory...'
+              git config --global --add safe.directory /app
 
+              echo '2. Unlocking git-crypt...'
+              export GIT_CRYPT_ALLOW_UNSAFE_REPOSITORY=1
+              echo \"\$GIT_CRYPT_KEY\" | base64 -d > keyfile
+              git-crypt unlock keyfile
+              
+              echo '3. Running python script...'
+              python3 script.py
+            "
+
+      # 5. 워크플로우를 다시 실행시키는 트리거 (기존과 동일)
       - name: Trigger workflow re-run
         if: success()
         run: |
