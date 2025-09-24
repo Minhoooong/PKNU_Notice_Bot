@@ -304,7 +304,6 @@ async def summarize_text(text: str) -> str:
     if not text or not text.strip():
         return "요약할 수 없는 공지입니다."
 
-    # 사용자의 프로필과 분석 관점을 명확히 정의
     user_profile = """
     - **분석 대상:** 부경대학교 기계공학과 2학년 학생
     - **주요 목표:** 스펙 향상, 장학금/마일리지 등 금전적/비금전적 혜택 획득
@@ -318,8 +317,8 @@ async def summarize_text(text: str) -> str:
 {user_profile}
 
 ### 분석 및 요약 형식
-1.  **⭐ 중요도 분석 (1~5점):**
-    - *이 공지가 위 학생의 '주요 목표'에 얼마나 부합하는지 별점으로 평가하고, 그 이유를 '전공 연관성', '예상 혜택', '참여 조건' 등을 근거로 간략히 설명해주세요.*
+1.  **중요도:** (1점에서 5점까지의 중요도를 '⭐' 이모지로만 표현해주세요. 예를 들어 3점이면 '⭐⭐⭐' 입니다.)
+    - *이 공지가 위 학생의 '주요 목표'에 얼마나 부합하는지 이유를 '전공 연관성', '예상 혜택', '참여 조건' 등을 근거로 간략히 설명해주세요.*
 
 2.  **📝 핵심 내용:**
     - *이 공지에서 가장 중요한 핵심 내용을 한두 문장으로 요약해주세요.*
@@ -333,22 +332,20 @@ async def summarize_text(text: str) -> str:
     - *신청 방법, 문의처 등 학생이 행동을 취하기 위해 꼭 알아야 할 정보를 간결하게 정리해주세요.*
 
 *각 항목에 대한 정보가 원문에 없으면 반드시 "정보 없음"이라고 명확히 기재해주세요.*
-
----
-### 공지사항 원문
-{text}
+*중요한 키워드는 반드시 `<b>`와 `</b>` 태그로 감싸서 강조해주세요.*
 """
     try:
         response = await aclient.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,  # 보다 일관되고 사실적인 요약을 위해 온도 값을 낮춤
+            temperature=0.1,
             max_tokens=1000
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
         return "요약 중 오류가 발생했습니다."
+        
 async def ocr_image_from_url(session: aiohttp.ClientSession, url: str) -> str:
     """URL에서 이미지를 비동기적으로 받아 OCR을 수행하고 텍스트를 반환합니다."""
     if not ocr_reader:
@@ -433,22 +430,43 @@ def _parse_pknuai_page(soup: BeautifulSoup) -> list:
 
         status_element = li.select_one(".pin_area span")
         status = status_element.get_text(strip=True) if status_element else "모집 예정"
-
-        # 기간 정보 추출 (개행 및 공백 문자 제거)
-        periods = li.select("dl dd")
-        recruit_period = ' '.join(periods[0].get_text(strip=True).split()) if len(periods) > 0 else "정보 없음"
-        operation_period = ' '.join(periods[1].get_text(strip=True).split()) if len(periods) > 1 else "정보 없음"
         
-        # 모집인원 정보 추출
-        apply_count_element = li.select_one("dd strong")
-        total_count_element = li.select_one("dd span")
+        # ▼▼▼▼▼ 추가된 파싱 로직 ▼▼▼▼▼
+        # 주관 학과 및 프로그램 종류
+        category_elements = li.select(".cate .name_of_class span")
+        department = category_elements[0].get_text(strip=True) if len(category_elements) > 0 else "정보 없음"
+        program_type = category_elements[1].get_text(strip=True) if len(category_elements) > 1 else "정보 없음"
+
+        # 프로그램 설명
+        description = li.select_one("p.card-desc")
+        desc_text = description.get_text(strip=True) if description else "정보 없음"
+        
+        # D-day
+        d_day_element = li.select_one(".app_ddate")
+        d_day = d_day_element.get_text(strip=True) if d_day_element else ""
+
+        # 기간 정보 (기존과 동일)
+        periods = li.select(".app_date .col-8 p")
+        recruit_period = ' '.join(periods[0].get_text(separator=' ', strip=True).split()) if len(periods) > 0 else "정보 없음"
+        recruit_period = recruit_period.replace("모집기간 ", "")
+        operation_period = ' '.join(periods[1].get_text(separator=' ', strip=True).split()) if len(periods) > 1 else "정보 없음"
+        operation_period = operation_period.replace("운영기간 ", "")
+
+        # 모집인원 정보 (기존과 동일)
+        apply_count_element = li.select_one(".app_gauge .volun")
+        total_count_element = li.select_one(".app_gauge .total_member")
         apply_info = "정보 없음"
         if apply_count_element and total_count_element:
-            apply_info = f"{apply_count_element.text.strip()} / {total_count_element.text.strip()} 명"
+            apply_info = f"{apply_count_element.text.strip().replace(' 지원', '')} / {total_count_element.text.strip()}"
+        # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
         programs.append({
             "title": title,
             "status": status,
+            "department": department,
+            "program_type": program_type,
+            "description": desc_text,
+            "d_day": d_day,
             "recruit_period": recruit_period,
             "operation_period": operation_period,
             "apply_info": apply_info
@@ -523,26 +541,35 @@ async def send_pknuai_program_notification(program: dict, target_chat_id: str):
     """
     title = html.escape(program.get("title", "제목 없음"))
     status = html.escape(program.get("status", "정보 없음"))
+    d_day = html.escape(program.get("d_day", ""))
+    
+    # D-day 정보가 있을 경우 제목에 함께 표시
+    if d_day:
+        title = f"{title} ({d_day})"
+        
+    department = html.escape(program.get("department", "정보 없음"))
+    program_type = html.escape(program.get("program_type", "정보 없음"))
     recruit_period = html.escape(program.get("recruit_period", "정보 없음"))
     operation_period = html.escape(program.get("operation_period", "정보 없음"))
     apply_info = html.escape(program.get("apply_info", "정보 없음"))
+    description = html.escape(program.get("description", "정보 없음"))
 
     message_text = (
         f"<b>[AI 비교과 프로그램]</b>\n"
         f"<b>{title}</b>\n\n"
+        f"▫️ <b>주관:</b> {department} ({program_type})\n"
         f"▫️ <b>상태:</b> {status}\n"
-        f"▫️ <b>모집기간:</b> {recruit_period}\n"
-        f"▫️ <b>운영기간:</b> {operation_period}\n"
-        f"▫️ <b>모집현황:</b> {apply_info}"
+        f"▫️ <b>모집:</b> {recruit_period}\n"
+        f"▫️ <b>운영:</b> {operation_period}\n"
+        f"▫️ <b>인원:</b> {apply_info}\n\n"
+        f"<i>{description}</i>"
     )
 
-    # 키보드(링크 버튼)를 제거하고 메시지만 전송
     await bot.send_message(
         chat_id=target_chat_id,
         text=message_text,
         parse_mode="HTML"
     )
-
 
 async def check_for_new_notices(target_chat_id: str):
     # ... 기존 공지사항 확인 함수 (변경 없음)
