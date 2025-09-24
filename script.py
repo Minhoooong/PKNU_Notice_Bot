@@ -526,19 +526,21 @@ async def send_notification(notice: tuple, target_chat_id: str):
         disable_web_page_preview=True
     )
     
+# script.py에서 이 함수를 찾아 아래 코드로 교체해 주세요.
+
 async def send_pknuai_program_notification(program: dict, details: dict, target_chat_id: str):
     """
-    파싱된 AI 비교과 프로그램 정보를 유니코드 진행바와 함께 전송하는 최종 함수.
+    파싱된 AI 비교과 프로그램 정보를 최종 포맷으로 전송하는 함수.
     """
     title = html.escape(program.get("title", "제목 없음"))
     
-    # --- ✨ 유니코드 블록 문자 진행바 생성 ---
+    # --- 유니코드 블록 문자 진행바 생성 ---
     total = details.get("모집인원", 0)
     current = details.get("지원인원", 0)
     progress_bar = ""
     if total > 0:
         percent = min(round((current / total) * 100), 100)
-        filled_count = int(percent / 10) # 10칸 기준
+        filled_count = int(percent / 10)
         empty_count = 10 - filled_count
         
         progress_bar = f"<b>📊 모집현황:</b> {current}명 / {total}명 ({percent}%)\n"
@@ -546,11 +548,9 @@ async def send_pknuai_program_notification(program: dict, details: dict, target_
     # --------------------------------------
 
     message_body = []
-    # 진행바가 있다면 메시지 최상단에 추가
     if progress_bar:
         message_body.append(progress_bar)
 
-    # 표시할 정보와 이모지 매핑
     info_map = {
         "모집기간": "🗓️", "운영기간": "⏰", "운영방식": "💻", "장소": "📍",
         "참여대상": "👥", "예상 마일리지": "💰",
@@ -559,20 +559,21 @@ async def send_pknuai_program_notification(program: dict, details: dict, target_
 
     for key, emoji in info_map.items():
         if details.get(key):
-            value = str(details[key]) # 데이터 타입을 문자열로 통일
+            value = str(details[key])
             message_body.append(f"<b>{emoji} {key}:</b> {html.escape(value)}")
     
-    # 각 정보 사이에 두 줄 개행을 넣어 가독성 확보
     summary = "\n\n".join(message_body)
+
+    # ✨ [최종 수정] 가장 선처럼 보이는 유니코드 문자로 구분선 변경
+    separator = "─" * 20  # 길이는 적절하게 조절 가능합니다.
 
     message_text = (
         f"<b>[AI 비교과 프로그램]</b>\n"
         f"<b>{title}</b>\n"
-        f"______________________________________________\n\n"
+        f"{separator}\n\n"
         f"{summary}"
     )
     
-    # ✨ 핵심 수정: 로그인 세션 문제로 링크 버튼(reply_markup) 제거
     await bot.send_message(
         chat_id=target_chat_id,
         text=message_text,
