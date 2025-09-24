@@ -274,13 +274,15 @@ async def get_school_notices(category: str = "") -> list:
         logging.exception(f"❌ 공지사항 파싱 중 오류 발생: {e}")
         return []
 
-async def summarize_text(text: str, original_title: str) -> dict:
+async def summarize_text(text: str, original_title: str, user_id: str = None) -> dict:
     """
     공지사항 원문과 원본 제목을 받아, 정제된 제목과 AI 요약문을 포함한 딕셔너리를 반환하는 고도화된 함수.
+    (사용자 ID를 받아 개인화된 분석 관점을 적용)
     """
     if not text or not text.strip():
         return {"refined_title": original_title, "summary_body": "요약할 수 없는 공지입니다."}
 
+    # 기본 분석 관점
     analysis_viewpoint = """
     - <b>대상:</b> 모든 부경대학교 학부생
     - <b>핵심 평가 기준:</b>
@@ -288,6 +290,51 @@ async def summarize_text(text: str, original_title: str) -> dict:
         2. <b>참여의 용이성:</b> 특정 학과/학년에 제한되지 않고 누구나 쉽게 참여할 수 있는가?
         3. <b>시의성 및 중요도:</b> 등록금, 수강신청 등 다수의 학생에게 영향을 미치는 중요한 학사일정인가?
     """
+
+    # 개인화 설정이 켜져 있고, 사용자 ID가 있는 경우 분석 관점을 동적으로 생성
+    if user_id:
+        user_settings = ALLOWED_USERS.get(user_id, {}).get("personalization", {})
+        if user_settings.get("enabled"):
+            profile_parts = []
+            criteria_parts = []
+
+            # 프로필 조합
+            selected_grade = user_settings.get("학년", "전체학년")
+            if selected_grade != "전체학년":
+                profile_parts.append(selected_grade)
+
+            selected_dept = user_settings.get("전공학과", "전체학과")
+            if selected_dept != "전체학과":
+                profile_parts.append(selected_dept)
+
+            # 관심분야에 따라 평가 기준 추가
+            selected_interests = user_settings.get("관심분야", [])
+            if not selected_interests:
+                 criteria_parts.append("일반적인 학업 및 교내 활동에 대한 중요도")
+            else:
+                criteria_map = {
+                    "취업": "채용, 인턴 등 취업 준비와의 직접적인 연관성", "채용": "채용 공고와의 직접적인 연관성",
+                    "인턴": "인턴십 기회 제공 여부", "현장실습": "현장실습 기회 제공 여부",
+                    "장학금": "장학금 수혜 가능성 및 금액", "등록금": "등록금 관련 중요 안내",
+                    "공모전": "수상 경력 및 스펙 획득 가능성", "경진대회": "경진대회 참여 기회", "대외활동": "새로운 경험 및 인맥 형성 기회",
+                    "특강": "관심 분야 지식 및 역량 강화 기회", "워크숍": "실습 중심의 역량 강화 기회", "교내활동": "교내 행사 및 활동 참여 기회",
+                    "학사일정": "졸업, 수강신청 등 필수 학업 일정과의 관련성", "수강신청": "수강신청 관련 중요 안내", "졸업": "졸업 요건 및 절차 관련성",
+                    "창업": "창업 지원 및 아이디어 실현 기회", "상담": "진로, 심리 등 상담 프로그램 제공 여부",
+                    "봉사": "봉사활동 시간 인정 및 참여 기회", "자격증": "자격증 취득 지원 여부",
+                    "대학원": "대학원 진학 및 연구 관련 정보"
+                }
+                for interest in selected_interests:
+                    if interest in criteria_map:
+                        criteria_parts.append(criteria_map[interest])
+
+            target_audience = " ".join(profile_parts) if profile_parts else "모든 부경대 학생"
+            
+            # 최종 analysis_viewpoint 생성
+            analysis_viewpoint = (
+                f"- <b>대상:</b> {target_audience}의 관점에서 분석\n"
+                f"- <b>핵심 평가 기준:</b>\n"
+                + "\n".join([f"    {i+1}. <b>{part}</b>" for i, part in enumerate(criteria_parts)])
+            )
 
     prompt = f"""
 당신은 부경대학교 학생들을 위한 똑똑한 AI 조교입니다.
@@ -338,7 +385,7 @@ async def summarize_text(text: str, original_title: str) -> dict:
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
         return {"refined_title": original_title, "summary_body": "요약 중 오류가 발생했습니다."}
-
+        
 async def summarize_program_details(details: dict, original_title: str) -> dict:
     """
     파싱된 비교과 프로그램 상세 정보를 받아 AI로 재가공 및 요약하는 함수.
@@ -416,9 +463,10 @@ async def ocr_image_from_url(session: aiohttp.ClientSession, url: str) -> str:
         logging.error(f"이미지 OCR 처리 중 오류 발생 {url}: {e}", exc_info=True)
         return ""
 
-async def extract_content(url: str, original_title: str) -> dict:
+async def extract_content(url: str, original_title: str, user_id: str = None) -> dict:
     """
     웹페이지 본문을 추출하고, 요약하여 정제된 제목, 요약 본문, 이미지 목록을 포함한 딕셔너리를 반환합니다.
+    (user_id를 summarize_text로 전달)
     """
     try:
         html_content = await fetch_url(url)
@@ -444,7 +492,8 @@ async def extract_content(url: str, original_title: str) -> dict:
             else:
                 return {"refined_title": original_title, "summary_body": "이미지가 있으나 텍스트를 추출할 수 없었습니다.", "images": images}
 
-        summary_dict = await summarize_text(text_to_summarize, original_title)
+        # user_id를 전달하도록 수정
+        summary_dict = await summarize_text(text_to_summarize, original_title, user_id=user_id)
         summary_dict["images"] = images
         return summary_dict
 
@@ -544,16 +593,17 @@ async def get_pknuai_programs() -> list:
 async def send_notification(notice: tuple, target_chat_id: str):
     """
     AI가 요약하고 정제한 정보를 바탕으로 공지사항 알림을 전송하는 함수. (구분선 추가)
+    (target_chat_id를 user_id로 활용하여 extract_content에 전달)
     """
     original_title, href, department, date_ = notice
     
-    summary_data = await extract_content(href, original_title)
+    # target_chat_id를 user_id로 전달
+    summary_data = await extract_content(href, original_title, user_id=target_chat_id)
     
     refined_title = summary_data.get("refined_title", original_title)
     summary_body = summary_data.get("summary_body", "요약 정보를 불러올 수 없습니다.")
     images = summary_data.get("images", [])
 
-    # ✨ [수정] 깔끔한 구분선 추가
     separator = "─" * 23
 
     message_text = (
@@ -747,11 +797,10 @@ async def register_command(message: types.Message):
         if user_id_str in ALLOWED_USERS:
             await message.answer("이미 등록된 사용자입니다.")
         else:
-            default_filters = {f: False for f in PROGRAM_FILTERS}
-            # 개인화 설정 기본값(false)을 추가합니다.
+            # 새로운 개인화 설정 기본값을 포함하여 사용자 데이터 생성
             ALLOWED_USERS[user_id_str] = {
-                "filters": default_filters,
-                "personalization_enabled": False
+                "filters": {f: False for f in PROGRAM_FILTERS},
+                "personalization": get_default_personalization() # 기본 설정 함수 호출
             }
             save_whitelist(ALLOWED_USERS)
             push_file_changes(WHITELIST_FILE, f"New user registration: {user_id_str}")
@@ -759,7 +808,6 @@ async def register_command(message: types.Message):
             logging.info(f"새 사용자 등록: {user_id_str}")
     else:
         await message.answer("❌ 등록 코드가 올바르지 않습니다.")
-
 @dp.callback_query(lambda c: c.data == "personalization_menu")
 async def personalization_menu_handler(callback: CallbackQuery):
     """개인화 설정 메뉴를 표시하는 핸들러"""
@@ -863,6 +911,205 @@ PROGRAM_FILTER_MAP = {
     "학생 학습역량 강화": "clsf_A01", "진로·심리 상담 지원": "clsf_A02",
     "취·창업 지원": "clsf_A03", "기타 활동": "clsf_A04"
 }
+
+PERSONALIZATION_OPTIONS = {
+    "학년": {
+        "type": "single",
+        "options": ["1학년", "2학년", "3학년", "4학년", "전체학년"]
+    },
+    "전공학과": {
+        "type": "hierarchical", # 계층형 선택 타입
+        "options": {
+            "공과대학": [
+                "기계공학부", "전기공학부", "에너지수송시스템공학부", "화학공학과", "공업화학과",
+                "고분자공학과", "융합소재공학부", "시스템경영·안전공학부", "건축공학과", "지속가능공학부",
+                "미래융합공학부"
+            ],
+            "정보융합대학": [
+                "데이터정보과학부", "미디어커뮤니케이션학부", "스마트헬스케어학부", "전자정보통신공학부",
+                "컴퓨터·인공지능공학부", "조형학부", "디지털금융학과", "스마트모빌리티공학과"
+            ],
+            "인문사회과학대학": [
+                "국어국문학과", "영어영문학부", "일어일문학부", "사학과", "경제학과", "법학과",
+                "행정복지학부", "국제지역학부", "중국학과", "정치외교학과", "유아교육과", "패션디자인학과"
+            ],
+            "자연과학대학": ["응용수학과", "물리학과", "화학과", "미생물학과", "간호학과", "과학컴퓨팅학과"],
+            "경영대학": ["경영학부", "국제통상학부"],
+            "수산과학대학": [
+                "수산생명과학부", "식품과학부", "해양생산시스템관리학부", "해양수산경영경제학부", "수해양산업교육과",
+                "수산생명의학과"
+            ],
+            "환경·해양대학": ["지구환경시스템과학부", "해양공학과", "에너지자원공학과"],
+            "기타": ["전체학과"]
+        }
+    },
+    "관심분야": {
+        "type": "multi", # 여러 개 선택 가능
+        "options": [
+            "취업", "채용", "인턴", "현장실습", "장학금", "등록금", "공모전", "경진대회",
+            "대외활동", "특강", "워크숍", "교내활동", "학사일정", "수강신청", "졸업",
+            "창업", "상담", "봉사", "자격증", "대학원"
+        ]
+    }
+}
+
+def get_default_personalization():
+    """개인화 설정 기본값을 생성하는 함수"""
+    settings = {"enabled": False}
+    for category, value in PERSONALIZATION_OPTIONS.items():
+        if value["type"] == "single" or value["type"] == "hierarchical":
+            # 단일/계층 선택은 마지막 옵션(전체)을 기본값으로 설정
+            settings[category] = "전체학과" if category == "전공학과" else value["options"][-1]
+        else: # multi
+            settings[category] = []
+    return settings
+
+@dp.callback_query(lambda c: c.data == "personalization_menu")
+async def personalization_menu_handler(callback: CallbackQuery, state: FSMContext):
+    """개인화 설정 메인 메뉴를 표시하는 핸들러"""
+    await callback.answer()
+    await state.clear() # 다른 상태에 있다가 돌아올 수 있으므로 상태 초기화
+    user_id_str = str(callback.message.chat.id)
+
+    if "personalization" not in ALLOWED_USERS.get(user_id_str, {}):
+        if user_id_str not in ALLOWED_USERS: ALLOWED_USERS[user_id_str] = {}
+        ALLOWED_USERS[user_id_str]["personalization"] = get_default_personalization()
+        save_whitelist(ALLOWED_USERS)
+
+    user_settings = ALLOWED_USERS[user_id_str]["personalization"]
+    is_enabled = user_settings.get("enabled", False)
+
+    # 현재 설정된 값을 예쁘게 표시
+    status_lines = []
+    # 순서를 보장하기 위해 PERSONALIZATION_OPTIONS의 키 순서대로 표시
+    for cat in PERSONALIZATION_OPTIONS.keys():
+        value = user_settings.get(cat, '미설정')
+        # 관심분야가 비어있으면 '없음'으로 표시
+        if isinstance(value, list) and not value:
+            value_str = '없음'
+        # 리스트는 쉼표로 구분하여 표시
+        elif isinstance(value, list):
+            value_str = ", ".join(value)
+        else:
+            value_str = str(value)
+        status_lines.append(f"  - {cat}: {value_str}")
+        
+    status_text = "\n".join(status_lines)
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"{'✅ 개인화 요약 ON' if is_enabled else '⬜️ 개인화 요약 OFF'}",
+            callback_data="p13n_toggle_enabled"
+        )],
+        [InlineKeyboardButton(text=f"⚙️ 학년 설정", callback_data=f"p13n_cat_학년"),
+         InlineKeyboardButton(text=f"⚙️ 전공학과 설정", callback_data=f"p13n_cat_전공학과")],
+        [InlineKeyboardButton(text=f"⚙️ 관심분야 설정", callback_data=f"p13n_cat_관심분야")],
+        [InlineKeyboardButton(text="⬅️ 뒤로가기", callback_data="back_to_start")]
+    ])
+
+    await callback.message.edit_text(
+        "<b>개인화 요약 설정</b>\n\n"
+        "이 기능을 켜면, 아래 설정된 프로필을 바탕으로 공지사항의 중요도와 평가 근거가 맞춤형으로 제공됩니다.\n\n"
+        f"<b>현재 프로필:</b>\n{status_text}",
+        reply_markup=keyboard
+    )
+
+@dp.callback_query(lambda c: c.data == "p13n_toggle_enabled")
+async def toggle_personalization_enabled_handler(callback: CallbackQuery):
+    """개인화 기능 자체를 ON/OFF하는 핸들러"""
+    user_id_str = str(callback.message.chat.id)
+    settings = ALLOWED_USERS[user_id_str].setdefault("personalization", get_default_personalization())
+    settings["enabled"] = not settings.get("enabled", False)
+    save_whitelist(ALLOWED_USERS)
+    push_file_changes(WHITELIST_FILE, f"User {user_id_str} toggled personalization")
+    await callback.answer(f"개인화 요약이 {'ON' if settings['enabled'] else 'OFF'} 되었습니다.")
+    await personalization_menu_handler(callback, FSMContext(storage=dp.storage, key=callback.message.chat.id))
+
+@dp.callback_query(lambda c: c.data.startswith("p13n_cat_"))
+async def personalization_category_handler(callback: CallbackQuery, state: FSMContext):
+    """개인화 카테고리 선택 시, 세부 옵션 메뉴를 표시하는 핸들러"""
+    category = callback.data.replace("p13n_cat_", "")
+    user_id_str = str(callback.message.chat.id)
+    settings = ALLOWED_USERS[user_id_str]["personalization"]
+    cat_info = PERSONALIZATION_OPTIONS[category]
+
+    if cat_info["type"] == "hierarchical":
+        await state.set_state(PersonalizationState.selecting_college)
+        colleges = list(cat_info["options"].keys())
+        buttons = [InlineKeyboardButton(text=college, callback_data=f"p13n_college_{college}") for college in colleges]
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            buttons[i:i+2] for i in range(0, len(buttons), 2)
+        ] + [[InlineKeyboardButton(text="⬅️ 이전 메뉴로", callback_data="personalization_menu")]])
+        await callback.message.edit_text(f"소속 <b>단과대학</b>을 선택하세요:", reply_markup=keyboard)
+        return
+
+    buttons = []
+    for option in cat_info["options"]:
+        is_selected = (settings.get(category) == option) if cat_info["type"] == "single" else (option in settings.get(category, []))
+        text = f"{'✅' if is_selected else '⬜️'} {option}"
+        buttons.append(InlineKeyboardButton(text=text, callback_data=f"p13n_set_{category}_{option}"))
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        buttons[i:i+2] for i in range(0, len(buttons), 2)
+    ] + [[InlineKeyboardButton(text="⬅️ 이전 메뉴로", callback_data="personalization_menu")]])
+    await callback.message.edit_text(f"<b>{category}</b> 설정:", reply_markup=keyboard)
+
+@dp.callback_query(PersonalizationState.selecting_college, lambda c: c.data.startswith("p13n_college_"))
+async def department_selection_handler(callback: CallbackQuery, state: FSMContext):
+    """단과대학 선택 후, 해당 대학의 학과 목록을 보여주는 핸들러"""
+    college = callback.data.replace("p13n_college_", "")
+    user_id_str = str(callback.message.chat.id)
+
+    if college == "기타":
+        ALLOWED_USERS[user_id_str]["personalization"]["전공학과"] = "전체학과"
+        save_whitelist(ALLOWED_USERS)
+        await state.clear()
+        await callback.answer("'전체학과'로 설정되었습니다.")
+        await personalization_menu_handler(callback, state)
+        return
+
+    await state.set_state(PersonalizationState.selecting_department)
+    departments = PERSONALIZATION_OPTIONS["전공학과"]["options"][college]
+    buttons = [InlineKeyboardButton(text=dept, callback_data=f"p13n_dept_{dept}") for dept in departments]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [b] for b in buttons
+    ] + [[InlineKeyboardButton(text="⬅️ 단과대학 다시 선택", callback_data="p13n_cat_전공학과")]])
+    await callback.message.edit_text(f"<b>{college}</b>의 세부 전공/학부/학과를 선택하세요:", reply_markup=keyboard)
+
+@dp.callback_query(PersonalizationState.selecting_department, lambda c: c.data.startswith("p13n_dept_"))
+async def set_department_handler(callback: CallbackQuery, state: FSMContext):
+    """최종 학과를 선택하고 설정을 저장하는 핸들러"""
+    department = callback.data.replace("p13n_dept_", "")
+    user_id_str = str(callback.message.chat.id)
+    ALLOWED_USERS[user_id_str]["personalization"]["전공학과"] = department
+    save_whitelist(ALLOWED_USERS)
+    await state.clear()
+    await callback.answer(f"'{department}'으로 설정되었습니다.")
+    await personalization_menu_handler(callback, state)
+
+@dp.callback_query(lambda c: c.data.startswith("p13n_set_"))
+async def set_personalization_option_handler(callback: CallbackQuery, state: FSMContext):
+    """세부 옵션을 선택(토글)하는 핸들러"""
+    _, category, option = callback.data.split("_", 2)
+    user_id_str = str(callback.message.chat.id)
+    settings = ALLOWED_USERS[user_id_str]["personalization"]
+    cat_info = PERSONALIZATION_OPTIONS[category]
+
+    if cat_info["type"] == "single":
+        settings[category] = option
+        save_whitelist(ALLOWED_USERS)
+        await callback.answer(f"{category}가 '{option}'으로 설정되었습니다.")
+        await personalization_menu_handler(callback, state)
+    else: # multi
+        current_options = settings.setdefault(category, [])
+        if option in current_options:
+            current_options.remove(option)
+            await callback.answer(f"'{option}' 선택 해제")
+        else:
+            current_options.append(option)
+            await callback.answer(f"'{option}' 선택")
+        save_whitelist(ALLOWED_USERS)
+        await personalization_category_handler(callback, state)
 
 def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
     """AI 비교과 필터 메뉴 키보드를 생성합니다."""
@@ -980,6 +1227,13 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
                 detail_soup = BeautifulSoup(detail_html, 'html.parser')
                 program_details = parse_pknuai_program_details(detail_soup)
                 await send_pknuai_program_notification(program, program_details, message.chat.id)
+                
+class KeywordSearchState(StatesGroup):
+    waiting_for_keyword = State()
+
+class PersonalizationState(StatesGroup):
+    selecting_college = State() # 단과대학 선택 중
+    selecting_department = State() # 세부학과 선택 중
 
 ################################################################################
 #                            기타 상태 및 메시지 핸들러                            #
