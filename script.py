@@ -92,6 +92,10 @@ class FilterState(StatesGroup):
 class KeywordSearchState(StatesGroup):
     waiting_for_keyword = State()
 
+class PersonalizationState(StatesGroup):
+    selecting_college = State() # 단과대학 선택 중
+    selecting_department = State() # 세부학과 선택 중
+
 ################################################################################
 #                                화이트리스트 관련 함수                            #
 ################################################################################
