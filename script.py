@@ -197,9 +197,8 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
 
     logging.info(f"🚀 Playwright 작업 시작 (검색어: {keyword}, 필터: {filters})")
 
-    # async with 블록이 Playwright 프로세스 자체의 시작과 종료를 관리합니다.
     async with async_playwright() as p:
-        browser = None  # browser 변수를 try 블록 밖에서 초기화합니다.
+        browser = None
         try:
             browser = await p.chromium.launch(
                 headless=True,
@@ -213,23 +212,14 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             )
             page = await context.new_page()
 
-            # 1. 로그인 처리
             login_bridge_url = f"https://pknuai.pknu.ac.kr/web/login/pknuLoginProc.do?mId=3&userId={PKNU_USERNAME}"
-            logging.info(f"1. 로그인 브리지 URL로 이동: {login_bridge_url}")
             await page.goto(login_bridge_url, wait_until="networkidle", timeout=60000)
-            logging.info("로그인 성공.")
 
-            # 2. 최종 목적지 URL 구성
             target_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
-
             if keyword:
-                from urllib.parse import quote
                 encoded_keyword = quote(keyword)
                 target_url += f"&searchKeyword={encoded_keyword}"
-                logging.info(f"키워드를 포함한 URL 생성: {target_url}")
 
-            # 3. 최종 URL로 이동
-            logging.info(f"2. 최종 목적지 URL로 이동: {target_url}")
             await page.goto(target_url, wait_until="networkidle", timeout=60000)
 
             if filters and any(filters.values()):
@@ -238,25 +228,21 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                     if is_selected:
                         input_id = PROGRAM_FILTER_MAP.get(filter_name)
                         if input_id:
+                            # 올바른 CSS 선택자 label[for='...'] 를 사용합니다.
                             await page.click(f"label[for='{input_id}']")
                 await page.wait_for_load_state("networkidle", timeout=30000)
                 logging.info("필터 적용 완료.")
 
             content = await page.content()
             logging.info("✅ Playwright 크롤링 성공")
-            
-            # context와 browser를 여기서 명시적으로 닫아줍니다.
-            await context.close()
-            await browser.close()
-            
             return content
 
         except Exception as e:
             logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
-            # 오류 발생 시에도 browser가 열려있다면 안전하게 닫습니다.
+            return ""
+        finally:
             if browser:
                 await browser.close()
-            return ""
             
 async def fetch_url(url: str) -> str:
     """정적 페이지(학교 공지사항) 크롤링 함수"""
@@ -303,52 +289,74 @@ async def get_school_notices(category: str = "") -> list:
 
 async def summarize_text(text: str) -> str:
     """
-    사용자의 스펙업 관점에서 공지사항을 분석하고 요약하는 함수 (최종 버전).
+    사용자의 상황에 맞춰 공지사항의 유용성을 분석하고 실행을 돕는 AI 요약 함수 (고도화 버전).
     """
     if not text or not text.strip():
         return "요약할 수 없는 공지입니다."
 
+    # 민홍 님의 저장된 프로필을 기반으로 동적으로 페르소나를 구성합니다.
     user_profile = """
-    - <b>분석 대상:</b> 부경대학교 기계공학과 2학년 학생
-    - <b>주요 목표:</b> 스펙 향상, 장학금/마일리지 등 금전적/비금전적 혜택 획득
-    - <b>핵심 고려사항:</b> 투입 시간 대비 얻는 이득이 큰가? 나의 전공과 관련이 있는가? 내가 지원할 자격이 되는가?
+    - <b>분석 대상:</b> 김민홍 (부경대학교 기계공학과 2학년)
+    - <b>주요 관심사:</b> 신기술 동향, 생산성 향상(Obsidian 등), 철학
+    - <b>핵심 목표:</b> 스펙 향상에 도움이 되는 의미 있는 경험, 장학금 등 실질적 혜택
+    - <b>고려사항:</b> 새로운 것을 시도하는 데 있어 '실천'의 장벽을 낮추는 것을 선호함. 명확하고 간단한 절차를 중요하게 생각함.
     """
 
     prompt = f"""
-당신은 학생의 입장에서 공지사항의 유용성을 판단하는 똑똑한 조교입니다. 아래의 '사용자 프로필 및 분석 관점'을 기준으로 '공지사항 원문'을 분석하고, 지정된 형식에 맞춰 한국어로 요약해주세요.
+당신은 부경대학교 기계공학과 선배로서, 후배인 김민홍 학생에게 공지사항을 설명해주는 역할을 합니다. 
+아래 '후배 프로필'과 '분석 프레임워크'에 따라, 주어진 '공지사항 원문'을 분석하고 지정된 '출력 형식'에 맞춰 친절하게 요약해주세요.
 
-### 사용자 프로필 및 분석 관점
+### 후배 프로필
 {user_profile}
 
-### 분석 및 요약 형식
-1.  <b>⭐ 중요도 분석:</b> (1점에서 5점까지의 중요도를 '⭐' 이모지로만 표현. 예: ⭐⭐⭐)
-    - *전공 연관성, 예상 혜택, 참여 조건 등을 근거로 <b>핵심적인 이유만 간결하게</b> 설명.*
+### 분석 프레임워크 (Chain-of-Thought)
+1.  **주제 파악:** 이 공지의 핵심이 무엇인가? (예: 장학금 신청, 공모전, 특강 안내 등)
+2.  **관련성 평가:** 이 내용이 기계공학과 2학년의 전공 지식이나 관심사(신기술, 생산성)와 관련이 있는가? 지금 당장 참여할 만한 가치가 있는가?
+3.  **가성비 분석:** 투입해야 할 시간과 노력 대비 얻을 수 있는 혜택(경험, 장학금, 마일리지 등)이 합리적인가?
+4.  **실행 가능성 검토:** 신청 절차가 복잡한가, 간단한가? 마감 기한이 촉박한가? 후배가 실천에 옮기기 쉬운 편인가?
+5.  **최종 종합:** 위의 분석 내용을 바탕으로, 지정된 출력 형식에 맞춰 핵심 정보를 간결하고 명확하게 정리한다.
 
-2.  <b>🎁 주요 혜택 및 자격:</b>
-    - <b>지원 자격:</b> (명시된 자격 조건)
-    - <b>주요 혜택:</b> (마일리지, 장학금 등 명시된 혜택)
-    - <b>모집/운영 기간:</b> (신청 및 활동 기간)
+### 출력 형식 (반드시 이 형식을 따라주세요)
+<b>1. 🔑 핵심 요약</b>
+- 이 공지를 한 문장으로 요약하면?
 
-3.  <b>✅ 체크포인트:</b>
-    - *신청 방법, 문의처 등 학생이 행동을 취하기 위해 꼭 알아야 할 정보.*
+<b>2. 🤔 이 공지가 민홍님께 왜 중요할까요?</b>
+- <b>전공/관심사 관련도:</b> (기계공학 전공, 신기술, 생산성 향상 등 민홍님의 관심사와 얼마나 관련 있는지 분석)
+- <b>가성비 (노력 대비 보상):</b> (예상되는 노력과 시간을 고려했을 때, 얻게 될 혜택이 얼마나 매력적인지 분석)
+- <b>실천 용이성:</b> (신청 절차의 복잡성, 준비 서류, 마감 기한 등을 고려하여 얼마나 쉽게 도전할 수 있는지 분석)
 
-각 항목에 대한 정보가 원문에 없으면 반드시 "정보 없음"이라고 명확히 기재해주세요.
-중요한 키워드는 반드시 `<b>`와 `</b>` 태그로 감싸서 강조해주세요. `**`는 사용하지 마세요.
+<b>3. 📋 상세 정보</b>
+- <b>지원 자격:</b>
+- <b>주요 혜택:</b>
+- <b>모집/운영 기간:</b>
+- <b>신청 방법:</b>
+- <b>문의처:</b>
+
+<b>4. 🚀 추천 액션</b>
+- (분석 결과를 바탕으로 민홍님이 지금 당장 할 수 있는 가장 간단하고 명확한 다음 행동을 제시. 예: '관심 있다면 지금 바로 캘린더에 마감일 메모하기', '첨부파일 다운로드해서 지원 자격만 빠르게 확인하기', '이번에는 가볍게 넘어가도 좋아요' 등)
+
+### 추가 규칙
+- 각 항목에 대한 정보가 원문에 없으면, 반드시 "정보 없음"이라고 명확히 기재해주세요.
+- 중요한 키워드는 `<b>` 태그로 감싸서 강조하고, `**`는 사용하지 마세요.
+- 전체적인 톤은 친하고 똑똑한 선배가 후배에게 조언해주는 것처럼 작성해주세요.
 """
     try:
         response = await aclient.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=1000
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"### 공지사항 원문\n{text}"}
+            ],
+            temperature=0.2,
+            max_tokens=1500
         )
         summary = response.choices[0].message.content.strip()
-        # 만약을 위해 한 번 더 변환
+        # 이중 **를 <b>로 변환
         summary = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', summary)
         return summary
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
-        return "요약 중 오류가 발생했습니다."
+        return "요약 중 오류가 발생했습니다. 나중에 다시 시도해주세요."
         
 async def ocr_image_from_url(session: aiohttp.ClientSession, url: str) -> str:
     """URL에서 이미지를 비동기적으로 받아 OCR을 수행하고 텍스트를 반환합니다."""
@@ -663,23 +671,14 @@ PROGRAM_FILTERS = [
 ]
 
 PROGRAM_FILTER_MAP = {
-    # 역량별 (카테고리: diag, 값: B02, A01 등)
-    "주도적 학습": {"category": "diag", "value": "A01"},
-    "통섭적 사고": {"category": "diag", "value": "A02"},
-    "확산적 연계": {"category": "diag", "value": "A03"},
-    "협력적 소통": {"category": "diag", "value": "B01"},
-    "문화적 포용": {"category": "diag", "value": "B02"},
-    "사회적 실천": {"category": "diag", "value": "B03"},
-    # 학년별 (카테고리: std, 값: 1, 2 등)
-    "1학년": {"category": "std", "value": "1"},
-    "2학년": {"category": "std", "value": "2"},
-    "3학년": {"category": "std", "value": "3"},
-    "4학년": {"category": "std", "value": "4"},
-    # 유형별 (카테고리: clsf)
-    "학생 학습역량 강화": {"category": "clsf", "value": "A01"},
-    "진로·심리 상담 지원": {"category": "clsf", "value": "A02"},
-    "취·창업 지원": {"category": "clsf", "value": "A03"},
-    "기타 활동": {"category": "clsf", "value": "A04"}
+    # 역량별
+    "주도적 학습": "diag_A01", "통섭적 사고": "diag_A02", "확산적 연계": "diag_A03",
+    "협력적 소통": "diag_B01", "문화적 포용": "diag_B02", "사회적 실천": "diag_B03",
+    # 학년별
+    "1학년": "std_1", "2학년": "std_2", "3학년": "std_3", "4학년": "std_4",
+    # 유형별
+    "학생 학습역량 강화": "clsf_A01", "진로·심리 상담 지원": "clsf_A02",
+    "취·창업 지원": "clsf_A03", "기타 활동": "clsf_A04"
 }
 
 def get_program_filter_keyboard(chat_id: int) -> InlineKeyboardMarkup:
@@ -725,32 +724,38 @@ async def my_programs_handler(callback: CallbackQuery):
     user_filters = ALLOWED_USERS.get(user_id_str, {}).get("filters", {})
 
     if not any(user_filters.values()):
-        # 필터가 설정되지 않았을 때 필터 설정 메뉴를 보여줍니다.
         keyboard = get_program_filter_keyboard(callback.message.chat.id)
         await callback.message.edit_text("🎯 먼저 필터를 선택해주세요:", reply_markup=keyboard)
         return
 
     status_msg = await callback.message.edit_text("📊 필터로 검색 중... (로그인 필요)")
 
-    # ▼▼▼▼▼ 핵심 수정 부분 ▼▼▼▼▼
-    # 1. 필터를 적용하여 HTML을 가져옵니다.
     html_content = await fetch_program_html(filters=user_filters)
+    
+    await status_msg.delete()
 
-    # 2. 가져온 HTML을 파싱합니다.
     programs = []
     if html_content:
         soup = BeautifulSoup(html_content, 'html.parser')
         programs = _parse_pknuai_page(soup)
-    # ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
-    await status_msg.delete()
 
     if not programs:
         await callback.message.answer("조건에 맞는 프로그램이 없습니다.")
     else:
+        # 결과를 하나씩 순차적으로 전송합니다.
         for program in programs:
-            await send_pknuai_program_notification(program, callback.message.chat.id)
-
+            # 상세 페이지 내용을 가져와 요약합니다.
+            detail_html = await fetch_url(program['href'])
+            detail_text = ""
+            if detail_html:
+                detail_soup = BeautifulSoup(detail_html, 'html.parser')
+                content_area = detail_soup.select_one(".wh-body")
+                if content_area:
+                    detail_text = content_area.get_text(strip=True)
+            
+            summary = await summarize_text(detail_text)
+            await send_pknuai_program_notification(program, summary, callback.message.chat.id)
+            
 @dp.callback_query(lambda c: c.data == "compare_programs")
 async def compare_programs_handler(callback: CallbackQuery):
     """AI 비교과 프로그램의 메인 메뉴를 보여줍니다."""
@@ -774,8 +779,10 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
     keyword = message.text.strip()
     await state.clear()
 
-    await message.answer(f"🔍 '{keyword}' 키워드로 검색 중입니다... (로그인 필요)")
+    status_msg = await message.answer(f"🔍 '{keyword}' 키워드로 검색 중입니다... (로그인 필요)")
     html_content = await fetch_program_html(keyword=keyword)
+
+    await status_msg.delete()
 
     programs = []
     if html_content:
@@ -785,8 +792,19 @@ async def process_keyword_search(message: types.Message, state: FSMContext):
     if not programs:
         await message.answer(f"❌ '{keyword}' 키워드에 해당하는 프로그램이 없습니다.")
     else:
+        # 결과를 하나씩 순차적으로 전송합니다.
         for program in programs:
-            await send_pknuai_program_notification(program, message.chat.id)
+            # 상세 페이지 내용을 가져와 요약합니다.
+            detail_html = await fetch_url(program['href'])
+            detail_text = ""
+            if detail_html:
+                detail_soup = BeautifulSoup(detail_html, 'html.parser')
+                content_area = detail_soup.select_one(".wh-body")
+                if content_area:
+                    detail_text = content_area.get_text(strip=True)
+            
+            summary = await summarize_text(detail_text)
+            await send_pknuai_program_notification(program, summary, message.chat.id)
 
 ################################################################################
 #                            기타 상태 및 메시지 핸들러                            #
