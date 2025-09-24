@@ -477,9 +477,11 @@ async def get_pknuai_programs() -> list:
 ################################################################################
 #                                알림 전송 및 확인 함수                            #
 ################################################################################
+# script.py에서 send_notification 함수를 찾아 아래 코드로 교체하세요.
+
 async def send_notification(notice: tuple, target_chat_id: str):
     """
-    AI가 요약하고 정제한 정보를 바탕으로 공지사항 알림을 전송하는 함수.
+    AI가 요약하고 정제한 정보를 바탕으로 공지사항 알림을 전송하는 함수. (구분선 추가)
     """
     original_title, href, department, date_ = notice
     
@@ -489,13 +491,17 @@ async def send_notification(notice: tuple, target_chat_id: str):
     summary_body = summary_data.get("summary_body", "요약 정보를 불러올 수 없습니다.")
     images = summary_data.get("images", [])
 
+    # ✨ [수정] 깔끔한 구분선 추가
+    separator = "─" * 23
+
     message_text = (
-        f"<b>{html.escape(refined_title)}</b>\n\n"
+        f"<b>{html.escape(refined_title)}</b>\n"
+        f"{separator}\n\n"
         f"{summary_body}\n\n"
         f"<i>- {html.escape(department)} / {html.escape(date_)}</i>"
     )
     keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="🔗 원본 공지 확인하기", url=href)]]
+        inline_keyboard=[[InlineKeyboardButton(text="🔗 공지 확인하기", url=href)]]
     )
 
     if images:
@@ -525,12 +531,10 @@ async def send_notification(notice: tuple, target_chat_id: str):
         parse_mode="HTML",
         disable_web_page_preview=True
     )
-    
-# script.py에서 이 함수를 찾아 아래 코드로 교체해 주세요.
 
 async def send_pknuai_program_notification(program: dict, details: dict, target_chat_id: str):
     """
-    파싱된 AI 비교과 프로그램 정보를 최종 포맷으로 전송하는 함수.
+    파싱된 AI 비교과 프로그램 정보를 공지사항과 유사한 최종 포맷으로 전송하는 함수.
     """
     title = html.escape(program.get("title", "제목 없음"))
     
@@ -544,33 +548,34 @@ async def send_pknuai_program_notification(program: dict, details: dict, target_
         empty_count = 10 - filled_count
         
         progress_bar = f"<b>📊 모집현황:</b> {current}명 / {total}명 ({percent}%)\n"
-        progress_bar += f"<b>[{'█' * filled_count}{'░' * empty_count}]</b>"
+        progress_bar += f"<b>[{'█' * filled_count}{'░' * empty_count}]</b>\n\n" # 가독성을 위해 줄바꿈 추가
     # --------------------------------------
 
-    message_body = []
-    if progress_bar:
-        message_body.append(progress_bar)
+    # ✨ [핵심 수정] "핵심 정보" 형식으로 데이터 재구성
+    core_info_body = []
+    # 표시할 정보의 순서와 제목을 정의
+    info_order = [
+        "모집기간", "운영기간", "운영방식", "장소", 
+        "참여대상", "예상 마일리지", "내용", "신청안내", "모집안내"
+    ]
 
-    info_map = {
-        "모집기간": "🗓️", "운영기간": "⏰", "운영방식": "💻", "장소": "📍",
-        "참여대상": "👥", "예상 마일리지": "💰",
-        "내용": "📋", "신청안내": "🔗", "모집안내": "📢"
-    }
-
-    for key, emoji in info_map.items():
+    for key in info_order:
         if details.get(key):
             value = str(details[key])
-            message_body.append(f"<b>{emoji} {key}:</b> {html.escape(value)}")
-    
-    summary = "\n\n".join(message_body)
+            # 이모지 없이 볼드체 항목으로 변경
+            core_info_body.append(f"<b>- {key}:</b> {html.escape(value)}")
 
-    # ✨ [최종 수정] 가장 선처럼 보이는 유니코드 문자로 구분선 변경
-    separator = "─" * 20  # 길이는 적절하게 조절 가능합니다.
+    # "핵심 정보" 제목과 함께 모든 항목을 결합
+    summary = f"<b>📋 핵심 정보</b>\n" + "\n".join(core_info_body)
+    
+    # 구분선 설정
+    separator = "─" * 23
 
     message_text = (
         f"<b>[AI 비교과 프로그램]</b>\n"
         f"<b>{title}</b>\n"
         f"{separator}\n\n"
+        f"{progress_bar if progress_bar else ''}" # 진행바가 있을 경우에만 추가
         f"{summary}"
     )
     
