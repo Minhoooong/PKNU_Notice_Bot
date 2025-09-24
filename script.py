@@ -200,14 +200,13 @@ push_pknuai_program_cache_changes = lambda: push_file_changes(PKNUAI_PROGRAM_CAC
 
 async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
     """
-    PKNU AI 비교과 페이지 HTML 수집 (신규 안정화 로직):
-      1) 포털(portal.pknu.ac.kr)에 직접 접속하여 로그인
-      2) 'PKNU AI' 링크 클릭 → 새 탭으로 전환
-      3) '비교과(웨일비)' > '비교과 프로그램' 순차적으로 클릭
-      4) 최종 목록 페이지 도달 후 필터/키워드 검색 적용, HTML 반환
+    PKNU AI 비교과 페이지 HTML 수집 (신규 간소화 로직):
+      1) 학번이 포함된 URL로 직접 접속하여 로그인 세션을 생성.
+      2) 비교과 프로그램 목록 페이지로 바로 이동.
+      3) 필터/키워드 검색 적용 후 HTML 반환.
     """
-    if not PKNU_USERNAME or not PKNU_PASSWORD:
-        logging.error("❌ PKNU_USERNAME 또는 PKNU_PASSWORD 환경 변수가 설정되지 않았습니다.")
+    if not PKNU_USERNAME:
+        logging.error("❌ PKNU_USERNAME 환경 변수가 설정되지 않았습니다.")
         return ""
 
     logging.info(f"🚀 Playwright 작업 시작 (검색어: {keyword}, 필터: {filters})")
@@ -229,74 +228,49 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             )
             page = await context.new_page()
 
-            # 1. 포털 사이트로 이동하여 로그인
-            logging.info("1. 부경대 포털 페이지로 이동합니다...")
-            await page.goto("https://portal.pknu.ac.kr/", wait_until="networkidle", timeout=60000)
+            # 1. 학번을 포함한 URL로 접속하여 로그인 처리
+            login_bridge_url = f"https://pknuai.pknu.ac.kr/web/login/pknuLoginProc.do?mId=3&userId={PKNU_USERNAME}"
+            logging.info(f"1. 로그인 브리지 URL로 이동합니다: {login_bridge_url}")
+            await page.goto(login_bridge_url, wait_until="networkidle", timeout=60000)
 
-            logging.info("2. ID/PW를 입력하여 로그인을 시도합니다.")
-            await page.fill("#userId", PKNU_USERNAME)
-            await page.fill("#userPw", PKNU_PASSWORD)
-            await page.click("button.login-btn")
+            # 2. 로그인 후, 비교과 프로그램 목록 페이지로 직접 이동
+            program_list_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/programList.do?mId=216"
+            logging.info(f"2. 비교과 프로그램 목록 페이지로 이동합니다: {program_list_url}")
+            await page.goto(program_list_url, wait_until="networkidle", timeout=60000)
             
-            # 2. 로그인 후 메인 페이지 로딩 대기 및 'PKNU AI' 링크 클릭
-            await page.wait_for_load_state("networkidle", timeout=60000)
-            logging.info("3. 로그인 성공. 메인 페이지에서 'PKNU AI' 링크를 찾습니다.")
+            logging.info(f"3. 최종 비교과 프로그램 목록 페이지 진입 완료: {page.url}")
 
-            # 새 탭이 열리는 이벤트를 기다리는 리스너 설정
-            async with context.expect_page() as new_page_info:
-                # XPath를 사용하여 'PKNU AI' 링크 클릭
-                await page.locator('xpath=/html/body/header/nav/div/ul/div/div[2]/li[4]/a').click()
-            
-            ai_page = await new_page_info.value
-            await ai_page.wait_for_load_state("networkidle", timeout=60000)
-            logging.info(f"4. 'PKNU AI' 새 탭으로 전환 완료: {ai_page.url}")
-
-            # 3. '비교과(웨일비)' 메뉴 클릭
-            logging.info("5. '비교과(웨일비)' 메뉴를 클릭합니다.")
-            await ai_page.locator('xpath=//*[@id="whalebeSubMenu"]').click()
-            await ai_page.wait_for_timeout(500) # 메뉴 펼쳐지는 시간 대기
-
-            # 4. '비교과 프로그램' 하위 메뉴 클릭
-            logging.info("6. '비교과 프로그램' 하위 메뉴를 클릭합니다.")
-            await ai_page.locator('xpath=//*[@id="mid216"]').click()
-            
-            # 최종 페이지 로딩 대기
-            await ai_page.wait_for_load_state("networkidle", timeout=60000)
-            logging.info(f"7. 최종 비교과 프로그램 목록 페이지 진입 완료: {ai_page.url}")
-
-            # 5. 필터 및 키워드 검색 적용 (기존 로직과 동일)
+            # 3. 필터 및 키워드 검색 적용 (기존 로직과 동일)
             if filters and any(filters.values()):
                 logging.info(f"필터를 적용합니다: {filters}")
                 for filter_name, is_selected in filters.items():
                     if is_selected:
                         input_id = PROGRAM_FILTER_MAP.get(filter_name)
                         if input_id:
-                            await ai_page.click(f"label[for='{input_id}']")
-                await ai_page.wait_for_timeout(500)
+                            await page.click(f"label[for='{input_id}']")
+                await page.wait_for_timeout(500)
 
             if keyword:
                 logging.info(f"키워드 '{keyword}'로 검색합니다.")
-                await ai_page.fill("input#searchVal", keyword)
-                await ai_page.click("button.btn.btn-outline-primary.btn_search")
+                await page.fill("input#searchVal", keyword)
+                await page.click("button.btn.btn-outline-primary.btn_search")
 
             if keyword or (filters and any(filters.values())):
-                await ai_page.wait_for_load_state("networkidle", timeout=30000)
+                await page.wait_for_load_state("networkidle", timeout=30000)
 
-            # 6. 최종 HTML 반환
-            content = await ai_page.content()
+            # 4. 최종 HTML 반환
+            content = await page.content()
             logging.info("✅ Playwright 크롤링 성공")
             return content
 
     except Exception as e:
         logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
-        # ... (기존 오류 처리 로직은 그대로 유지) ...
         return ""
     finally:
         if context:
             await context.close()
         if browser:
             await browser.close()
-
 
 async def fetch_url(url: str) -> str:
     """정적 페이지(학교 공지사항) 크롤링 함수"""
