@@ -916,6 +916,9 @@ PROGRAM_FILTER_MAP = {
     "취·창업 지원": "clsf_A03", "기타 활동": "clsf_A04"
 }
 
+# ▼▼▼ [REPLACE] 기존 PERSONALIZATION 관련 코드를 모두 지우고 아래 내용으로 교체 ▼▼▼
+
+# 개인화 설정 옵션 정의
 PERSONALIZATION_OPTIONS = {
     "학년": {
         "type": "single",
@@ -962,9 +965,8 @@ def get_default_personalization():
     settings = {"enabled": False}
     for category, value in PERSONALIZATION_OPTIONS.items():
         if value["type"] == "single" or value["type"] == "hierarchical":
-            # 단일/계층 선택은 마지막 옵션(전체)을 기본값으로 설정
             settings[category] = "전체학과" if category == "전공학과" else value["options"][-1]
-        else: # multi
+        else:
             settings[category] = []
     return settings
 
@@ -972,7 +974,7 @@ def get_default_personalization():
 async def personalization_menu_handler(callback: CallbackQuery, state: FSMContext):
     """개인화 설정 메인 메뉴를 표시하는 핸들러"""
     await callback.answer()
-    await state.clear() # 다른 상태에 있다가 돌아올 수 있으므로 상태 초기화
+    await state.clear()
     user_id_str = str(callback.message.chat.id)
 
     if "personalization" not in ALLOWED_USERS.get(user_id_str, {}):
@@ -983,31 +985,21 @@ async def personalization_menu_handler(callback: CallbackQuery, state: FSMContex
     user_settings = ALLOWED_USERS[user_id_str]["personalization"]
     is_enabled = user_settings.get("enabled", False)
 
-    # 현재 설정된 값을 예쁘게 표시
     status_lines = []
-    # 순서를 보장하기 위해 PERSONALIZATION_OPTIONS의 키 순서대로 표시
     for cat in PERSONALIZATION_OPTIONS.keys():
         value = user_settings.get(cat, '미설정')
-        # 관심분야가 비어있으면 '없음'으로 표시
-        if isinstance(value, list) and not value:
-            value_str = '없음'
-        # 리스트는 쉼표로 구분하여 표시
-        elif isinstance(value, list):
-            value_str = ", ".join(value)
-        else:
-            value_str = str(value)
+        if isinstance(value, list) and not value: value_str = '없음'
+        elif isinstance(value, list): value_str = ", ".join(value)
+        else: value_str = str(value)
         status_lines.append(f"  - {cat}: {value_str}")
         
     status_text = "\n".join(status_lines)
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{'✅ 개인화 요약 ON' if is_enabled else '⬜️ 개인화 요약 OFF'}",
-            callback_data="p13n_toggle_enabled"
-        )],
-        [InlineKeyboardButton(text=f"⚙️ 학년 설정", callback_data=f"p13n_cat_학년"),
-         InlineKeyboardButton(text=f"⚙️ 전공학과 설정", callback_data=f"p13n_cat_전공학과")],
-        [InlineKeyboardButton(text=f"⚙️ 관심분야 설정", callback_data=f"p13n_cat_관심분야")],
+        [InlineKeyboardButton(text=f"{'✅ 개인화 요약 ON' if is_enabled else '⬜️ 개인화 요약 OFF'}", callback_data="p13n_toggle_enabled")],
+        [InlineKeyboardButton(text="⚙️ 학년 설정", callback_data="p13n_cat_학년"),
+         InlineKeyboardButton(text="⚙️ 전공학과 설정", callback_data="p13n_cat_전공학과")],
+        [InlineKeyboardButton(text="⚙️ 관심분야 설정", callback_data="p13n_cat_관심분야")],
         [InlineKeyboardButton(text="⬅️ 뒤로가기", callback_data="back_to_start")]
     ])
 
@@ -1019,19 +1011,17 @@ async def personalization_menu_handler(callback: CallbackQuery, state: FSMContex
     )
 
 @dp.callback_query(lambda c: c.data == "p13n_toggle_enabled")
-async def toggle_personalization_enabled_handler(callback: CallbackQuery):
-    """개인화 기능 자체를 ON/OFF하는 핸들러"""
+async def toggle_personalization_enabled_handler(callback: CallbackQuery, state: FSMContext):
     user_id_str = str(callback.message.chat.id)
     settings = ALLOWED_USERS[user_id_str].setdefault("personalization", get_default_personalization())
     settings["enabled"] = not settings.get("enabled", False)
     save_whitelist(ALLOWED_USERS)
     push_file_changes(WHITELIST_FILE, f"User {user_id_str} toggled personalization")
     await callback.answer(f"개인화 요약이 {'ON' if settings['enabled'] else 'OFF'} 되었습니다.")
-    await personalization_menu_handler(callback, FSMContext(storage=dp.storage, key=callback.message.chat.id))
+    await personalization_menu_handler(callback, state)
 
 @dp.callback_query(lambda c: c.data.startswith("p13n_cat_"))
 async def personalization_category_handler(callback: CallbackQuery, state: FSMContext):
-    """개인화 카테고리 선택 시, 세부 옵션 메뉴를 표시하는 핸들러"""
     category = callback.data.replace("p13n_cat_", "")
     user_id_str = str(callback.message.chat.id)
     settings = ALLOWED_USERS[user_id_str]["personalization"]
@@ -1060,7 +1050,6 @@ async def personalization_category_handler(callback: CallbackQuery, state: FSMCo
 
 @dp.callback_query(PersonalizationState.selecting_college, lambda c: c.data.startswith("p13n_college_"))
 async def department_selection_handler(callback: CallbackQuery, state: FSMContext):
-    """단과대학 선택 후, 해당 대학의 학과 목록을 보여주는 핸들러"""
     college = callback.data.replace("p13n_college_", "")
     user_id_str = str(callback.message.chat.id)
 
@@ -1082,7 +1071,6 @@ async def department_selection_handler(callback: CallbackQuery, state: FSMContex
 
 @dp.callback_query(PersonalizationState.selecting_department, lambda c: c.data.startswith("p13n_dept_"))
 async def set_department_handler(callback: CallbackQuery, state: FSMContext):
-    """최종 학과를 선택하고 설정을 저장하는 핸들러"""
     department = callback.data.replace("p13n_dept_", "")
     user_id_str = str(callback.message.chat.id)
     ALLOWED_USERS[user_id_str]["personalization"]["전공학과"] = department
@@ -1093,7 +1081,6 @@ async def set_department_handler(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(lambda c: c.data.startswith("p13n_set_"))
 async def set_personalization_option_handler(callback: CallbackQuery, state: FSMContext):
-    """세부 옵션을 선택(토글)하는 핸들러"""
     _, category, option = callback.data.split("_", 2)
     user_id_str = str(callback.message.chat.id)
     settings = ALLOWED_USERS[user_id_str]["personalization"]
