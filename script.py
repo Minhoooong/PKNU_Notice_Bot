@@ -934,12 +934,14 @@ def get_default_personalization():
     return settings
 
 @dp.callback_query(lambda c: c.data == "personalization_menu")
+@dp.callback_query(lambda c: c.data == "personalization_menu")
 async def personalization_menu_handler(callback: CallbackQuery, state: FSMContext):
-    """개인화 설정 메인 메뉴를 표시하는 핸들러"""
+    """개인화 설정 메인 메뉴를 표시하는 핸들러 (요약 기능 강화)"""
     await callback.answer()
     await state.clear()
     user_id_str = str(callback.message.chat.id)
 
+    # --- 기존 코드와 동일 ---
     if "personalization" not in ALLOWED_USERS.get(user_id_str, {}):
         if user_id_str not in ALLOWED_USERS: ALLOWED_USERS[user_id_str] = {}
         ALLOWED_USERS[user_id_str]["personalization"] = get_default_personalization()
@@ -948,12 +950,16 @@ async def personalization_menu_handler(callback: CallbackQuery, state: FSMContex
     user_settings = ALLOWED_USERS[user_id_str]["personalization"]
     is_enabled = user_settings.get("enabled", False)
 
+    # ▼▼▼ [수정] 현재 설정 값을 요약하는 텍스트 생성 ▼▼▼
     status_lines = []
     for cat in PERSONALIZATION_OPTIONS.keys():
         value = user_settings.get(cat, '미설정')
-        if isinstance(value, list) and not value: value_str = '없음'
-        elif isinstance(value, list): value_str = ", ".join(value)
-        else: value_str = str(value)
+        if isinstance(value, list) and not value:
+            value_str = '없음'
+        elif isinstance(value, list):
+            value_str = ", ".join(value)
+        else:
+            value_str = str(value)
         status_lines.append(f"  - {cat}: {value_str}")
         
     status_text = "\n".join(status_lines)
@@ -1044,7 +1050,7 @@ async def set_department_handler(callback: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(lambda c: c.data.startswith("p13n_set_"))
 async def set_personalization_option_handler(callback: CallbackQuery, state: FSMContext):
-    _, category, option = callback.data.split("_", 2)
+    _, category, option = callback.data.split("_", 3)
     user_id_str = str(callback.message.chat.id)
     settings = ALLOWED_USERS[user_id_str]["personalization"]
     cat_info = PERSONALIZATION_OPTIONS[category]
