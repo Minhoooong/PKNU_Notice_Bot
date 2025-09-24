@@ -338,7 +338,61 @@ async def summarize_text(text: str, original_title: str) -> dict:
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
         return {"refined_title": original_title, "summary_body": "요약 중 오류가 발생했습니다."}
-        
+
+async def summarize_program_details(details: dict, original_title: str) -> dict:
+    """
+    파싱된 비교과 프로그램 상세 정보를 받아 AI로 재가공 및 요약하는 함수.
+    """
+    # AI에게 전달할 정보를 문자열로 변환
+    input_text = "\n".join([f"- {key}: {value}" for key, value in details.items()])
+
+    prompt = f"""
+당신은 부경대학교 학생들을 위한 똑똑한 AI 조교입니다.
+아래 '작업 규칙'에 따라 '비교과 프로그램 정보'를 분석하고, 지정된 '출력 형식'으로만 요약해주세요.
+
+### 작업 규칙 (매우 중요)
+1.  **핵심 정보 요약:** '내용', '모집안내', '신청안내' 등 여러 항목에 흩어진 정보를 종합하여 가장 중요한 핵심 내용을 간결하게 요약한다.
+2.  **참여 대상 통합:** '참여대상'과 '모집안내'에 언급된 대상을 통합하여 최종 '참여 대상'을 명확하게 정리한다. 예를 들어 '참여대상: 1학년'과 '모집안내: 자유전공학부 학생'이라면, 최종적으로 '자유전공학부 1학년'으로 합쳐준다.
+3.  **중요도 평가 (5점 척도):** 아래 기준에 따라 중요도를 ⭐ 1개에서 5개까지로 평가한다.
+    - ⭐⭐⭐⭐⭐ (강력 추천): 대다수 학생에게 유용하며, 마일리지가 높거나 혜택이 매우 좋은 프로그램.
+    - ⭐⭐⭐⭐ (추천): 특정 단과대/학과 학생들에게 매우 유용한 핵심 전공 관련 프로그램.
+    - ⭐⭐⭐ (확인 권장): 참여하면 좋은 일반적인 교양, 특강, 학습법 관련 프로그램.
+    - ⭐⭐ (관심 시 확인): 소수 대상이거나 특정 관심 분야에만 해당되는 프로그램.
+    - ⭐ (참고): 단순 안내 또는 홍보성 프로그램.
+4.  **기간 포맷 정리:** '모집기간'과 '운영기간'의 날짜와 시간을 "YYYY.MM.DD HH:MM" 형식으로 통일하고, 시작일과 종료일이 같으면 날짜는 한 번만 표시한다. (예: "2025.09.12 16:30 ~ 20:30")
+
+### 비교과 프로그램 정보
+- 원본 제목: {original_title}
+{input_text}
+
+### 출력 형식 (Key-Value JSON 형식)
+{{
+    "refined_title": "AI가 정제한 새로운 프로그램 제목",
+    "summary_body": "<b>⭐⭐⭐(여기 별 개수를 수정) 한 줄 요약</b>\\n\\n<b>📋 핵심 정보</b>\\n- <b>모집기간:</b> (정리된 형식)\\n- <b>운영기간:</b> (정리된 형식)\\n- <b>참여 대상:</b> (통합된 대상)\\n- <b>주요 내용:</b> (핵심 내용 요약)\\n- <b>신청 방법:</b> ...",
+    "tags": "#비교과 #프로그램 #마일리지"
+}}
+"""
+    try:
+        response = await aclient.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": "위 규칙에 따라 비교과 프로그램 정보를 요약해주세요."}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+            max_tokens=1000
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        logging.error(f"❌ OpenAI API 프로그램 요약 오류: {e}", exc_info=True)
+        return {
+            "refined_title": original_title,
+            "summary_body": "AI 요약 중 오류가 발생했습니다.",
+            "tags": ""
+        }
+
+
 async def ocr_image_from_url(session: aiohttp.ClientSession, url: str) -> str:
     """URL에서 이미지를 비동기적으로 받아 OCR을 수행하고 텍스트를 반환합니다."""
     if not ocr_reader:
@@ -397,9 +451,8 @@ async def extract_content(url: str, original_title: str) -> dict:
     except Exception as e:
         logging.error(f"❌ 본문 내용 추출 오류 {url}: {e}", exc_info=True)
         return {"refined_title": original_title, "summary_body": "내용 처리 중 오류가 발생했습니다.", "images": []}
+        
 # ▼ 추가: PKNU AI 비교과 파싱 함수
-# script.py
-
 def _parse_pknuai_page(soup: BeautifulSoup) -> list:
     """PKNU AI 시스템의 HTML을 파싱하여 프로그램 목록 반환 (상세 페이지 URL 추출)"""
     programs = []
@@ -432,32 +485,40 @@ def _parse_pknuai_page(soup: BeautifulSoup) -> list:
     return programs
 
 def parse_pknuai_program_details(soup: BeautifulSoup) -> dict:
-    """PKNU AI 시스템의 상세 페이지 HTML을 파싱하여 주요 정보 반환 (진행바를 위한 숫자 데이터 추출 포함)"""
+    """PKNU AI 시스템의 상세 페이지 HTML을 파싱하여 주요 정보 반환 (기간 포맷팅 강화)"""
     details = {}
 
-    # pro_desc_box 내의 정보 추출 (기존과 동일)
+    # ✨ [NEW] 기간 문자열을 정제하는 헬퍼 함수
+    def format_period_string(raw_text: str) -> str:
+        # nbsp; 같은 공백 문자를 일반 공백으로 바꾸고, 여러 공백을 하나로 합칩니다.
+        clean_text = re.sub(r'\s+', ' ', raw_text.replace('\xa0', ' ')).strip()
+        # " ~ " 양 옆의 공백을 통일합니다.
+        return re.sub(r'\s*~\s*', ' ~ ', clean_text)
+
     pro_desc_box = soup.select_one(".pro_desc_box")
     if pro_desc_box:
-        details["모집기간"] = pro_desc_box.find("span", string=re.compile(r"모집기간:")).find_next_sibling("span").get_text(strip=True, separator=" ").replace("\n", "").replace("\t", " ")
-        details["운영기간"] = pro_desc_box.find("span", string=re.compile(r"운영기간:")).find_next_sibling("span").get_text(strip=True, separator=" ").replace("\n", "").replace("\t", " ")
+        # ✨ [수정] 헬퍼 함수를 적용하여 기간 데이터를 가공합니다.
+        raw_recruit_period = pro_desc_box.find("span", string=re.compile(r"모집기간:")).find_next_sibling("span").get_text(strip=True, separator=" ")
+        details["모집기간"] = format_period_string(raw_recruit_period)
+        
+        raw_operating_period = pro_desc_box.find("span", string=re.compile(r"운영기간:")).find_next_sibling("span").get_text(strip=True, separator=" ")
+        details["운영기간"] = format_period_string(raw_operating_period)
+
         details["운영방식"] = pro_desc_box.find("span", string=re.compile(r"운영방식:")).find_next_sibling("span").get_text(strip=True)
         details["장소"] = pro_desc_box.find("span", string=re.compile(r"장소:")).find_next_sibling("span").get_text(strip=True)
         details["참여대상"] = pro_desc_box.find("span", string=re.compile(r"참여대상:")).find_next_sibling("span").get_text(strip=True)
         details["예상 마일리지"] = pro_desc_box.find("span", string=re.compile(r"예상 마일리지:")).find_next_sibling("span").get_text(strip=True).replace("점","").strip() + "점"
 
-    # ✨ 핵심 수정: 모집인원 정보를 숫자로 추출
+    # 모집인원 숫자 추출
     app_gauge = soup.select_one(".app_gauge")
     if app_gauge:
-        # 텍스트에서 숫자만 추출하는 헬퍼 함수
         get_num = lambda text: int(re.search(r'\d+', text).group()) if re.search(r'\d+', text) else 0
-
         total_member_text = app_gauge.select_one(".total_member").get_text(strip=True) if app_gauge.select_one(".total_member") else "0"
         volun_text = app_gauge.select_one(".volun").get_text(strip=True) if app_gauge.select_one(".volun") else "0"
-        
         details["모집인원"] = get_num(total_member_text)
         details["지원인원"] = get_num(volun_text)
 
-    # 내용, 신청안내 등 pre 태그 정보 추출 (기존과 동일)
+    # 내용, 신청안내 등 pre 태그 정보 추출
     for header in soup.select("h4.pi_header"):
         header_text = header.get_text(strip=True)
         content_box = header.find_next_sibling("div", class_="pi_box")
@@ -533,60 +594,78 @@ async def send_notification(notice: tuple, target_chat_id: str):
         disable_web_page_preview=True
     )
 
-async def send_pknuai_program_notification(program: dict, details: dict, target_chat_id: str):
+async def summarize_program_details(details: dict, original_title: str) -> dict:
     """
-    파싱된 AI 비교과 프로그램 정보를 공지사항과 유사한 최종 포맷으로 전송하는 함수.
+    파싱된 비교과 프로그램 상세 정보를 받아 AI로 재가공 및 요약하는 함수 (규칙 기반 강화).
     """
-    title = html.escape(program.get("title", "제목 없음"))
-    
-    # --- 유니코드 블록 문자 진행바 생성 ---
-    total = details.get("모집인원", 0)
-    current = details.get("지원인원", 0)
-    progress_bar = ""
-    if total > 0:
-        percent = min(round((current / total) * 100), 100)
-        filled_count = int(percent / 10)
-        empty_count = 10 - filled_count
-        
-        progress_bar = f"<b>📊 모집현황:</b> {current}명 / {total}명 ({percent}%)\n"
-        progress_bar += f"<b>[{'█' * filled_count}{'░' * empty_count}]</b>\n\n" # 가독성을 위해 줄바꿈 추가
-    # --------------------------------------
+    # AI에게 전달할 정보를 문자열로 변환
+    input_text = "\n".join([f"- {key}: {value}" for key, value in details.items()])
 
-    # ✨ [핵심 수정] "핵심 정보" 형식으로 데이터 재구성
-    core_info_body = []
-    # 표시할 정보의 순서와 제목을 정의
-    info_order = [
-        "모집기간", "운영기간", "운영방식", "장소", 
-        "참여대상", "예상 마일리지", "내용", "신청안내", "모집안내"
-    ]
+    prompt = f"""
+당신은 부경대학교 학생들을 위한 똑똑한 AI 조교입니다.
+아래 '작업 규칙'에 따라 '비교과 프로그램 정보'를 분석하고, 지정된 '출력 형식'으로만 요약해주세요.
 
-    for key in info_order:
-        if details.get(key):
-            value = str(details[key])
-            # 이모지 없이 볼드체 항목으로 변경
-            core_info_body.append(f"<b>- {key}:</b> {html.escape(value)}")
+### 작업 규칙 (매우 중요)
 
-    # "핵심 정보" 제목과 함께 모든 항목을 결합
-    summary = f"<b>📋 핵심 정보</b>\n" + "\n".join(core_info_body)
-    
-    # 구분선 설정
-    separator = "─" * 23
+1.  **제목 정제:** '원본 제목'에서 불필요한 수식어를 제거하고 간결한 핵심 제목으로 만든다.
 
-    message_text = (
-        f"<b>[AI 비교과 프로그램]</b>\n"
-        f"<b>{title}</b>\n"
-        f"{separator}\n\n"
-        f"{progress_bar if progress_bar else ''}" # 진행바가 있을 경우에만 추가
-        f"{summary}"
-    )
-    
-    await bot.send_message(
-        chat_id=target_chat_id,
-        text=message_text,
-        parse_mode="HTML",
-        disable_web_page_preview=True
-    )
+2.  **정보 통합 및 요약:**
+    - '내용', '모집안내', '신청안내' 등 여러 항목에 흩어진 정보를 종합하여 '주요 내용'을 간결하게 요약한다.
+    - '참여대상'과 '모집안내'에 언급된 대상을 통합하여 최종 '참여 대상'을 명확하게 정리한다.
 
+3.  **중요도 평가 (5점 척도):**
+    - ⭐⭐⭐⭐⭐ (강력 추천): 대다수 학생에게 유용하며, 마일리지가 높거나 혜택이 매우 좋은 프로그램.
+    - ⭐⭐⭐⭐ (추천): 특정 단과대/학과 학생들에게 매우 유용한 핵심 전공 관련 프로그램.
+    - ⭐⭐⭐ (확인 권장): 참여하면 좋은 일반적인 교양, 특강, 학습법 관련 프로그램.
+    - ⭐⭐ (관심 시 확인): 소수 대상이거나 특정 관심 분야에만 해당되는 프로그램.
+    - ⭐ (참고): 단순 안내 또는 홍보성 프로그램.
+
+4.  **추천 액션 생성 (아래 조건에 따라 1~2개 생성):**
+    - **(긴급성)** '모집기간' 마감까지 3일 이내라면: "마감이 임박했어요! 놓치기 아까운 기회이니 지금 바로 신청하세요."
+    - **(경쟁성)** '선발방식'이 '선착순'이고 모집률이 70% 이상이라면: "선착순 마감이니 서두르는 걸 추천해요."
+    - **(접근성)** '참여대상'이 '전체' 또는 '1학년' 대상이고 신청이 간편해 보이면: "신청 절차가 간단해 보여요. 5분만 투자해서 경험과 마일리지를 얻어보세요."
+    - **(진로 연관성)** 내용이 '취업', '자격증', '상담' 등과 관련 있다면: "진로나 취업을 준비하고 있다면 좋은 스펙이 될 거예요."
+
+5.  **관련 태그 선택 (아래 '태그 목록'에서 가장 적합한 2~5개만 선택):**
+    - **`단과대학`이나 `주요 학과` 태그는 프로그램이 명시적으로 해당 집단을 대상으로 할 때만 포함한다.**
+    - 절대 목록에 없는 태그를 만들지 않는다.
+
+### 태그 목록
+
+-   **분야:** `#특강` `#워크숍` `#공모전` `#경진대회` `#상담` `#컨설팅` `#현장실습` `#인턴십` `#봉사` `#자격증`
+-   **혜택:** `#마일리지` `#장학금` `#인증서` `#기념품`
+-   **대상:** `#전체학생` `#새내기` `#졸업예정자` `#외국인유학생`
+-   **단과대학:** `#공과대학` `#정보융합대학` `#인문사회과학대학` `#자연과학대학` `#경영대학` `#수산과학대학`
+-   **주요 학과:** `#기계공학과` `#컴퓨터공학과` `#IT융합응용공학과` `#데이터정보과학부`
+
+### 비교과 프로그램 정보
+- 원본 제목: {original_title}
+{input_text}
+
+### 출력 형식 (Key-Value JSON 형식)
+{{
+    "refined_title": "AI가 정제한 새로운 프로그램 제목",
+    "summary_body": "<b>⭐⭐⭐(여기 별 개수를 수정) 한 줄 요약</b>\\n\\n<b>📋 핵심 정보</b>\\n- <b>모집기간:</b> ...\\n- <b>운영기간:</b> ...\\n- <b>참여 대상:</b> (통합된 대상)\\n- <b>주요 내용:</b> (핵심 내용 요약)\\n- <b>신청 방법:</b> ...\\n\\n<b>🚀 추천 액션</b>\\n- (규칙에 따라 생성된 추천 액션)\\n\\n<b>#️⃣ 관련 태그</b>\\n- (태그 목록에서 선택된 태그)"
+}}
+"""
+    try:
+        response = await aclient.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": "위 규칙에 따라 비교과 프로그램 정보를 요약해주세요."}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.0, # 규칙 기반이므로 창의성을 최소화
+            max_tokens=1000
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        logging.error(f"❌ OpenAI API 프로그램 요약 오류: {e}", exc_info=True)
+        return {
+            "refined_title": original_title,
+            "summary_body": "AI 요약 중 오류가 발생했습니다.",
+        }
 async def check_for_new_notices(target_chat_id: str):
     # ... 기존 공지사항 확인 함수 (변경 없음)
     logging.info("새로운 공지사항을 확인합니다...")
