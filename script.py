@@ -185,22 +185,22 @@ push_pknuai_program_cache_changes = lambda: push_file_changes(PKNUAI_PROGRAM_CAC
 
 async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
     """
-    PKNU AI 비교과 페이지 HTML 수집 (URL 직접 구성 방식):
+    PKNU AI 비교과 페이지 HTML 수집 (URL 직접 구성 방식, 안정성 강화):
       1) 학번이 포함된 URL로 직접 접속하여 로그인 세션을 생성.
       2) 키워드나 필터가 있으면, 이를 포함한 최종 URL을 직접 구성.
       3) 구성된 URL로 바로 이동하여 HTML을 한 번에 가져옴.
+      4) 브라우저 리소스를 안정적으로 관리 및 종료.
     """
     if not PKNU_USERNAME:
         logging.error("❌ PKNU_USERNAME 환경 변수가 설정되지 않았습니다.")
         return ""
 
     logging.info(f"🚀 Playwright 작업 시작 (검색어: {keyword}, 필터: {filters})")
-    
-    browser = None
-    context = None
-    
-    try:
-        async with async_playwright() as p:
+
+    # async with 블록이 Playwright 프로세스 자체의 시작과 종료를 관리합니다.
+    async with async_playwright() as p:
+        browser = None  # browser 변수를 try 블록 밖에서 초기화합니다.
+        try:
             browser = await p.chromium.launch(
                 headless=True,
                 args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
@@ -213,7 +213,7 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
             )
             page = await context.new_page()
 
-            # 1. 학번을 포함한 URL로 접속하여 로그인 처리
+            # 1. 로그인 처리
             login_bridge_url = f"https://pknuai.pknu.ac.kr/web/login/pknuLoginProc.do?mId=3&userId={PKNU_USERNAME}"
             logging.info(f"1. 로그인 브리지 URL로 이동: {login_bridge_url}")
             await page.goto(login_bridge_url, wait_until="networkidle", timeout=60000)
@@ -221,20 +221,17 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
 
             # 2. 최종 목적지 URL 구성
             target_url = "https://pknuai.pknu.ac.kr/web/nonSbjt/program.do?mId=216&order=3"
-            
-            # 키워드가 있으면 URL에 추가
+
             if keyword:
-                # URL 인코딩을 통해 한글 검색어가 깨지지 않도록 처리
                 from urllib.parse import quote
                 encoded_keyword = quote(keyword)
                 target_url += f"&searchKeyword={encoded_keyword}"
                 logging.info(f"키워드를 포함한 URL 생성: {target_url}")
 
-            # 3. 최종 URL로 이동하여 HTML 가져오기
+            # 3. 최종 URL로 이동
             logging.info(f"2. 최종 목적지 URL로 이동: {target_url}")
             await page.goto(target_url, wait_until="networkidle", timeout=60000)
 
-            # 필터가 있는 경우, 페이지 이동 후 필터 적용
             if filters and any(filters.values()):
                 logging.info(f"필터를 적용합니다: {filters}")
                 for filter_name, is_selected in filters.items():
@@ -242,26 +239,23 @@ async def fetch_program_html(keyword: str = None, filters: dict = None) -> str:
                         input_id = PROGRAM_FILTER_MAP.get(filter_name)
                         if input_id:
                             await page.click(f"label[for='{input_id}']")
-                # 필터 적용 후 데이터가 로드될 시간을 줍니다.
                 await page.wait_for_load_state("networkidle", timeout=30000)
                 logging.info("필터 적용 완료.")
 
-            # 4. 최종 페이지의 HTML을 반환
             content = await page.content()
             logging.info("✅ Playwright 크롤링 성공")
+            
             return content
 
-    except PlaywrightTimeoutError as e:
-        logging.error(f"❌ Playwright 시간 초과 오류 발생: {e}", exc_info=True)
-        return ""
-    except Exception as e:
-        logging.error(f"❌ Playwright 크롤링 중 알 수 없는 오류 발생: {e}", exc_info=True)
-        return ""
-    finally:
-        if context:
-            await context.close()
-        if browser:
-            await browser.close()
+        except Exception as e:
+            logging.error(f"❌ Playwright 크롤링 중 오류 발생: {e}", exc_info=True)
+            return ""
+        finally:
+            # try 블록이 성공적으로 끝나든, exception이 발생하든 항상 실행됩니다.
+            # browser 객체가 성공적으로 생성되었다면 여기서 모든 것을 닫아줍니다.
+            if browser:
+                await browser.close()
+                logging.info("Playwright 브라우저를 종료했습니다.")
             
 async def fetch_url(url: str) -> str:
     """정적 페이지(학교 공지사항) 크롤링 함수"""
