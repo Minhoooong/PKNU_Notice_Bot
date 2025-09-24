@@ -17,6 +17,9 @@ jobs:
         PLAYWRIGHT_BROWSERS_PATH: /root/.cache/ms-playwright
         
     steps:
+      - name: Pull latest docker image
+        run: docker pull ghcr.io/minhoooong/pknu_notice_bot:latest
+        
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
