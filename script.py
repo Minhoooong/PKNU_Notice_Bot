@@ -298,16 +298,57 @@ async def get_school_notices(category: str = "") -> list:
         return []
 
 async def summarize_text(text: str) -> str:
-    # ... 기존 요약 코드 (변경 없음)
-    if not text or not text.strip(): return "요약할 수 없는 공지입니다."
-    prompt = f"다음 텍스트를 한국어로 3~5문장의 간결한 요약으로 만들어줘. 핵심 내용을 명확하게 전달하고, 중요한 부분은 <b> 태그를 사용해서 강조해줘.\n\n원문:\n{text}\n\n요약:"
+    """
+    사용자의 스펙업 관점에서 공지사항을 분석하고 요약하는 함수.
+    """
+    if not text or not text.strip():
+        return "요약할 수 없는 공지입니다."
+
+    # 사용자의 프로필과 분석 관점을 명확히 정의
+    user_profile = """
+    - **분석 대상:** 부경대학교 기계공학과 2학년 학생
+    - **주요 목표:** 스펙 향상, 장학금/마일리지 등 금전적/비금전적 혜택 획득
+    - **핵심 고려사항:** 투입 시간 대비 얻는 이득이 큰가? 나의 전공과 관련이 있는가? 내가 지원할 자격이 되는가?
+    """
+
+    prompt = f"""
+당신은 학생의 입장에서 공지사항의 유용성을 판단하는 똑똑한 조교입니다. 아래의 '사용자 프로필 및 분석 관점'을 기준으로 '공지사항 원문'을 분석하고, 지정된 형식에 맞춰 한국어로 요약해주세요.
+
+### 사용자 프로필 및 분석 관점
+{user_profile}
+
+### 분석 및 요약 형식
+1.  **⭐ 중요도 분석 (1~5점):**
+    - *이 공지가 위 학생의 '주요 목표'에 얼마나 부합하는지 별점으로 평가하고, 그 이유를 '전공 연관성', '예상 혜택', '참여 조건' 등을 근거로 간략히 설명해주세요.*
+
+2.  **📝 핵심 내용:**
+    - *이 공지에서 가장 중요한 핵심 내용을 한두 문장으로 요약해주세요.*
+
+3.  **🎁 주요 혜택 및 자격:**
+    - **지원 자격:** (예: 2학년 이상, 기계공학부 학생 등 명시된 자격 조건)
+    - **주요 혜택:** (예: 비교과 마일리지 10점, 장학금 50만 원, 수료증 발급 등)
+    - **모집/운영 기간:** (신청 및 활동 기간)
+
+4.  **✅ 체크포인트:**
+    - *신청 방법, 문의처 등 학생이 행동을 취하기 위해 꼭 알아야 할 정보를 간결하게 정리해주세요.*
+
+*각 항목에 대한 정보가 원문에 없으면 반드시 "정보 없음"이라고 명확히 기재해주세요.*
+
+---
+### 공지사항 원문
+{text}
+"""
     try:
-        response = await aclient.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}], temperature=0.3, max_tokens=600)
+        response = await aclient.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,  # 보다 일관되고 사실적인 요약을 위해 온도 값을 낮춤
+            max_tokens=1000
+        )
         return response.choices[0].message.content.strip()
     except Exception as e:
         logging.error(f"❌ OpenAI API 요약 오류: {e}", exc_info=True)
         return "요약 중 오류가 발생했습니다."
-
 async def ocr_image_from_url(session: aiohttp.ClientSession, url: str) -> str:
     """URL에서 이미지를 비동기적으로 받아 OCR을 수행하고 텍스트를 반환합니다."""
     if not ocr_reader:
@@ -382,41 +423,35 @@ async def extract_content(url: str) -> tuple:
 
 # ▼ 추가: PKNU AI 비교과 파싱 함수
 def _parse_pknuai_page(soup: BeautifulSoup) -> list:
-    """PKNU AI 시스템의 HTML을 파싱하여 프로그램 목록 반환 (수정된 버전)"""
+    """PKNU AI 시스템의 HTML을 파싱하여 프로그램 목록 반환 (상세 정보 추가)"""
     programs = []
-    # 1. 각 프로그램 카드를 감싸는 li 태그를 선택합니다.
     items = soup.select("li.col-xl-3.col-lg-4.col-md-6")
-    
+
     for li in items:
-        # 2. 제목을 h5 태그 안의 a 태그에서 추출합니다.
         title_element = li.select_one("h5 a.ellip_2")
         title = title_element.get_text(strip=True) if title_element else "제목 없음"
 
-        # 3. 상태를 .pin_area 안의 span 태그에서 추출합니다. (없을 경우 대비)
         status_element = li.select_one(".pin_area span")
         status = status_element.get_text(strip=True) if status_element else "모집 예정"
 
-        # 4. 상세 정보에 필요한 고유 데이터는 .card-body 태그에서 추출합니다.
-        meta_el = li.select_one(".card-body")
-        if not meta_el:
-            continue
-
-        yy = meta_el.get("data-yy")
-        shtm = meta_el.get("data-shtm")
-        nonsubjcCd = meta_el.get("data-nonsubjc-cd")
-        nonsubjcCrsCd = meta_el.get("data-nonsubjc-crs-cd")
-        pageIndex = meta_el.get("data-page-index", "1")
-        data_url = meta_el.get("data-url", "/web/nonSbjt/programDetail.do?mId=216&order=3")
-
-        if not all([yy, shtm, nonsubjcCd, nonsubjcCrsCd]):
-            continue
-
-        detailUrl = (f"{PKNUAI_BASE_URL}{data_url}&pageIndex={pageIndex}&yy={yy}&shtm={shtm}"
-                     f"&nonsubjcCd={nonsubjcCd}&nonsubjcCrsCd={nonsubjcCrsCd}")
+        # 기간 정보 추출 (개행 및 공백 문자 제거)
+        periods = li.select("dl dd")
+        recruit_period = ' '.join(periods[0].get_text(strip=True).split()) if len(periods) > 0 else "정보 없음"
+        operation_period = ' '.join(periods[1].get_text(strip=True).split()) if len(periods) > 1 else "정보 없음"
+        
+        # 모집인원 정보 추출
+        apply_count_element = li.select_one("dd strong")
+        total_count_element = li.select_one("dd span")
+        apply_info = "정보 없음"
+        if apply_count_element and total_count_element:
+            apply_info = f"{apply_count_element.text.strip()} / {total_count_element.text.strip()} 명"
 
         programs.append({
-            "title": title, "status": status, "href": detailUrl,
-            "yy": yy, "shtm": shtm, "nonsubjcCd": nonsubjcCd, "nonsubjcCrsCd": nonsubjcCrsCd
+            "title": title,
+            "status": status,
+            "recruit_period": recruit_period,
+            "operation_period": operation_period,
+            "apply_info": apply_info
         })
     return programs
     
@@ -483,15 +518,30 @@ async def send_notification(notice: tuple, target_chat_id: str):
 
 # ▼ 추가: PKNU AI 프로그램 알림 전송 함수
 async def send_pknuai_program_notification(program: dict, target_chat_id: str):
+    """
+    AI 비교과 프로그램 알림을 전송하는 함수 (상세 정보 포함 및 링크 제거)
+    """
     title = html.escape(program.get("title", "제목 없음"))
-    status = html.escape(program.get("status", ""))
-    href = program.get("href", "#")
-    
-    message_text = (f"<b>[AI 비교과] {title}</b>\n"
-                    f"<b>상태:</b> {status}\n")
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔎 자세히 보기", url=href)]])
-    await bot.send_message(chat_id=target_chat_id, text=message_text, reply_markup=keyboard, parse_mode="HTML")
+    status = html.escape(program.get("status", "정보 없음"))
+    recruit_period = html.escape(program.get("recruit_period", "정보 없음"))
+    operation_period = html.escape(program.get("operation_period", "정보 없음"))
+    apply_info = html.escape(program.get("apply_info", "정보 없음"))
+
+    message_text = (
+        f"<b>[AI 비교과 프로그램]</b>\n"
+        f"<b>{title}</b>\n\n"
+        f"▫️ <b>상태:</b> {status}\n"
+        f"▫️ <b>모집기간:</b> {recruit_period}\n"
+        f"▫️ <b>운영기간:</b> {operation_period}\n"
+        f"▫️ <b>모집현황:</b> {apply_info}"
+    )
+
+    # 키보드(링크 버튼)를 제거하고 메시지만 전송
+    await bot.send_message(
+        chat_id=target_chat_id,
+        text=message_text,
+        parse_mode="HTML"
+    )
 
 
 async def check_for_new_notices(target_chat_id: str):
